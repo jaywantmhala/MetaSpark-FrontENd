@@ -13,7 +13,7 @@ export default function AdminTemplate({ children }) {
     const userData = JSON.parse(localStorage.getItem('swiftflow-user') || '{}');
     setUser(userData);
     
-    if (!userData || userData.role !== 'admin') {
+    if (!userData || userData.roles !== 'ADMIN') {
       router.push('/login');
     } else {
       setIsLoading(false);

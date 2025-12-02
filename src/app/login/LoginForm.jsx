@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 import RoleSelector from './RoleSelector';
 
 export default function LoginForm() {
@@ -11,117 +12,99 @@ export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  // Dummy user credentials for demo purposes
-  const validCredentials = {
-    admin: { 
-      password: 'admin123', 
-      name: 'Admin User', 
-      email: 'admin@swiftflow.com', 
-      role: 'admin' 
-    },
-    designer: { 
-      password: 'design123', 
-      name: 'Dana Scully', 
-      email: 'design@swiftflow.com', 
-      role: 'designer' 
-    },
-    production: { 
-      password: 'prod123', 
-      name: 'Production Team', 
-      email: 'production@swiftflow.com', 
-      role: 'production' 
-    },
-    machinist: { 
-      password: 'machine123', 
-      name: 'Tony Stark', 
-      email: 'machinist@swiftflow.com', 
-      role: 'machinist',
-      department: 'Machining'
-    },
-    inspector: { 
-      password: 'inspect123', 
-      name: 'Inspection Team', 
-      email: 'inspection@swiftflow.com', 
-      role: 'inspector' 
-    },
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
-    if (!selectedUser) {
-      setError('Please select a role');
-      return;
-    }
-    
+
     if (!userId || !password) {
       setError('Please enter both ID and password');
       return;
     }
-    
-    if (!selectedUser.role) {
-      setError('Invalid user data. Please try again.');
-      return;
-    }
 
     setIsLoading(true);
-    
+
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Check credentials (in a real app, this would be an API call)
-      const userKey = userId.toLowerCase().trim();
-      const user = validCredentials[userKey];
-      
-      // Check if user exists
-      if (!user) {
-        setError('Invalid credentials. Please check your ID and try again.');
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
+      const response = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: userId,
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = 'Invalid credentials. Please try again.';
+        try {
+          const errorBody = await response.json();
+          if (errorBody?.error) {
+            message = errorBody.error;
+          }
+        } catch (_) {
+          // ignore JSON parse errors and use default message
+        }
+        setError(message);
         return;
       }
-      
-      // Check password
-      if (user.password !== password) {
-        setError('Incorrect password. Please try again.');
-        return;
-      }
-      
-      // Check role match
-      if (user.role !== selectedUser.role) {
-        setError('Incorrect role selected. Please try again.');
-        return;
-      }
-      
-      // If we get here, login is successful
+
+      const data = await response.json();
+
+      // Expected backend response:
+      // { id, roles, token, username }
       const userData = {
-        id: userId,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        department: selectedUser.department || user.role,
-        lastLogin: new Date().toISOString()
+        id: data.id,
+        roles: data.roles,
+        token: data.token,
+        username: data.username,
       };
-      
-      // Store user data
+
+      // Store auth data
       localStorage.setItem('swiftflow-user', JSON.stringify(userData));
-      
-      // Redirect based on role
-      if (user.role === 'admin') {
-        window.location.href = '/AdminUser/dashboard';
-      } else if (user.role === 'designer') {
-        window.location.href = '/DesignUser/dashboard';
-      } else if (user.role === 'machinist') {
-        window.location.href = '/MechanistUser/dashboard';
-      } else if (user.role === 'inspector') {
-        window.location.href = '/InspectionUser/dashboard';
-      } else if (user.role === 'production') {
-        window.location.href = '/ProductionUser/dashboard';
-      } else {
-        // For other roles, redirect to a default page or show an error
-        setError('Access not configured for this role. Please contact support.');
-        localStorage.removeItem('swiftflow-user'); // Clear invalid login
+      if (data.token) {
+        localStorage.setItem('swiftflow-token', data.token);
       }
+
+      // Determine redirect path based on role
+      // Normalize roles from backend, e.g. "ADMIN" -> "ADMIN" (no prefix to remove)
+      const normalizedRole = (data.roles || '')
+        .toString()
+        .split(',')[0] // if roles like "ADMIN,USER" take first
+        .trim()
+        .toUpperCase();
+
+      console.log('Login response roles:', data.roles, 'normalized:', normalizedRole);
+
+      let redirectPath = '/login';
+      switch (normalizedRole) {
+        case 'ADMIN':
+          redirectPath = '/AdminUser/dashboard';
+          break;
+        case 'DESIGNER':
+          redirectPath = '/DesignUser/dashboard';
+          break;
+        case 'MACHINIST':
+          redirectPath = '/MechanistUser/dashboard';
+          break;
+        case 'INSPECTOR':
+          redirectPath = '/InspectionUser/dashboard';
+          break;
+        case 'PRODUCTION':
+          redirectPath = '/ProductionUser/dashboard';
+          break;
+        default:
+          redirectPath = '/login';
+          setError('Access not configured for this role. Please contact support.');
+          localStorage.removeItem('swiftflow-user');
+          localStorage.removeItem('swiftflow-token');
+          return;
+      }
+
+      toast.success('Login successful');
+      router.push(redirectPath);
     } catch (error) {
       console.error('Login error:', error);
       setError('An error occurred. Please try again.');
@@ -214,14 +197,6 @@ export default function LoginForm() {
             'Sign In'
           )}
         </button>
-        
-        <div className="text-center text-sm text-gray-500 mt-4">
-          <p>Demo credentials:</p>
-          <p className="text-xs mt-1 text-gray-400">
-            Admin: admin / admin123<br />
-            Design: designer / design123
-          </p>
-        </div>
       </form>
     </div>
   );

@@ -16,8 +16,15 @@ export default function ClientLayout({ children }) {
   const [user, setUser] = useState(null);
 
   const handleLogout = () => {
-    localStorage.removeItem('swiftflow-user');
-    router.push('/login');
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('swiftflow-user');
+        localStorage.removeItem('swiftflow-token');
+        localStorage.removeItem('auth-token');
+      }
+    } finally {
+      router.push('/');
+    }
   };
 
   // Close dropdown when clicking outside
