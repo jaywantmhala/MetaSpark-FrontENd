@@ -13,6 +13,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
   const [newStatus, setNewStatus] = useState('');
   const [comment, setComment] = useState('');
   const [attachment, setAttachment] = useState(null);
+  const [percentage, setPercentage] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [statusHistory, setStatusHistory] = useState([]);
@@ -96,7 +97,8 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       // Create status request object
       const statusRequest = {
         newStatus: newStatus.toUpperCase(),
-        comment: comment || ''
+        comment: comment || '',
+        percentage: percentage.toString()
       };
       
       // Append status request as JSON string
@@ -133,6 +135,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       setNewStatus('');
       setComment('');
       setAttachment(null);
+      setPercentage(0);
       toast.success('Status updated successfully!');
 
       // Immediately refresh status history so the UI shows the latest entry
@@ -239,6 +242,44 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
             );
             const progressPercent = (currentIndex / (steps.length - 1)) * 100;
 
+            // Calculate department progress percentages from status history
+            const departmentProgress = {};
+            
+            // Initialize all departments with 0%
+            steps.forEach(step => {
+              departmentProgress[step.key] = 0;
+            });
+
+            // Get the latest percentage for each department from status history
+            if (statusHistory && Array.isArray(statusHistory)) {
+              const departmentLatest = {};
+              
+              // Group status history by department
+              statusHistory.forEach(status => {
+                const dept = (status.newStatus || '').toUpperCase();
+                if (dept && steps.some(step => step.key === dept)) {
+                  // Convert percentage string to number, default to 0 if invalid
+                  const percent = parseInt(status.percentage) || 0;
+                  
+                  // Keep the latest (highest) percentage for each department
+                  if (!departmentLatest[dept] || percent > departmentLatest[dept]) {
+                    departmentLatest[dept] = percent;
+                    departmentProgress[dept] = percent;
+                  }
+                }
+              });
+            }
+
+            // Define colors for each department
+            const departmentColors = {
+              'ENQUIRY': '#a855f7',    // purple
+              'DESIGN': '#f97316',     // orange
+              'PRODUCTION': '#22c55e', // green
+              'MACHINING': '#3b82f6',  // blue
+              'INSPECTION': '#eab308', // yellow
+              'COMPLETED': '#6b7280'   // gray
+            };
+
             return (
               <>
                 <div className="mb-4 flex items-center justify-between">
@@ -266,12 +307,13 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                   />
                 </div>
 
-                {/* Step dots */}
+                {/* Step dots with department progress */}
                 <div className="mt-5 flex justify-between">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const baseColor = isCompleted || isCurrent ? 'text-indigo-600' : 'text-gray-400';
+                    const departmentPercentage = departmentProgress[step.key] || 0;
 
                     return (
                       <div key={step.key} className="flex flex-col items-center text-center flex-1 min-w-0">
@@ -284,6 +326,21 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                         </div>
                         <div className={`text-[11px] font-medium whitespace-nowrap ${baseColor}`}>
                           {step.label}
+                        </div>
+                        {/* Horizontal small progress bar for each department */}
+                        <div className="w-16 mt-1">
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div 
+                              className="h-1.5 rounded-full"
+                              style={{ 
+                                width: `${departmentPercentage}%`,
+                                backgroundColor: departmentColors[step.key] || '#9ca3af'
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-1">
+                          {departmentPercentage}%
                         </div>
                       </div>
                     );
@@ -389,6 +446,25 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                     />
                   </div>
                   <div className="sm:col-span-2">
+                    <label className="block text-xs text-black mb-1">Progress Percentage: {percentage}%</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={percentage}
+                      onChange={(e) => setPercentage(parseInt(e.target.value))}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      disabled={isSubmitting}
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>0%</span>
+                      <span>25%</span>
+                      <span>50%</span>
+                      <span>75%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
                     <button 
                       type="submit"
                       disabled={isSubmitting}
@@ -436,6 +512,20 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                                 {status.newStatus || '—'}
                               </span>
                             </div>
+                            {/* {status.percentage && (
+                              <div className="mb-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="text-gray-500">Progress</span>
+                                  <span className="text-gray-700 font-medium">{status.percentage}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                  <div 
+                                    className="bg-indigo-600 h-1.5 rounded-full" 
+                                    style={{ width: `${status.percentage}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            )} */}
                             {status.comment && (
                               <p className="text-sm text-gray-700 mb-2">{status.comment}</p>
                             )}
@@ -508,6 +598,8 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
 export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [rows, setRows] = useState([]);
@@ -779,6 +871,8 @@ export default function DashboardPage() {
             <div className="relative flex-1">
               <input
                 type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by Order ID or Customer..."
                 className="w-full border border-gray-200 rounded-md px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
               />
@@ -789,7 +883,7 @@ export default function DashboardPage() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="border border-gray-200 rounded-md px-2 py-2 text-sm text-black"
             >
-              <option value="All">All</option>
+              <option value="All">All Statuses</option>
               <option value="Inquiry">Inquiry</option>
               <option value="Design">Design</option>
               <option value="Production">Production</option>
@@ -797,9 +891,22 @@ export default function DashboardPage() {
               <option value="Inspection">Inspection</option>
               <option value="Completed">Completed</option>
             </select>
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="border border-gray-200 rounded-md px-2 py-2 text-sm text-black"
+            >
+              <option value="All">All Departments</option>
+              <option value="ENQUIRY">Enquiry</option>
+              <option value="DESIGN">Design</option>
+              <option value="PRODUCTION">Production</option>
+              <option value="MACHINING">Machining</option>
+              <option value="INSPECTION">Inspection</option>
+              <option value="COMPLETED">Completed</option>
+            </select>
           </div>
 
-          <OrdersTable rows={rows} statusFilter={statusFilter} onView={setSelectedOrder} loading={loading} error={error} />
+          <OrdersTable rows={rows} statusFilter={statusFilter} departmentFilter={departmentFilter} searchTerm={searchTerm} onView={setSelectedOrder} loading={loading} error={error} />
         </div>
         {/* Details Panel */}
         {selectedOrder && (
@@ -1119,8 +1226,28 @@ function polarToCartesian(cx, cy, r, angleDeg) {
   };
 }
 
-function OrdersTable({ rows = [], statusFilter = 'All', onView, loading, error }) {
-  const visible = statusFilter === 'All' ? rows : rows.filter(r => r.status === statusFilter);
+function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All', searchTerm = '', onView, loading, error }) {
+  // Apply all filters: status, department, and search
+  let visible = rows;
+  
+  // Apply status filter
+  if (statusFilter !== 'All') {
+    visible = visible.filter(r => r.status === statusFilter);
+  }
+  
+  // Apply department filter
+  if (departmentFilter !== 'All') {
+    visible = visible.filter(r => r.department === departmentFilter);
+  }
+  
+  // Apply search filter
+  if (searchTerm) {
+    const term = searchTerm.toLowerCase();
+    visible = visible.filter(r => 
+      r.id.toLowerCase().includes(term) || 
+      r.customer.toLowerCase().includes(term)
+    );
+  }
   
   if (loading) {
     return (
