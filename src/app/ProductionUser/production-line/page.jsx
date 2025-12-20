@@ -26,6 +26,8 @@ export default function ProductionLinePage() {
   const router = useRouter();
 
   const [orders, setOrders] = useState([]);
+  const [pdfMap, setPdfMap] = useState({});
+  const [pdfModalUrl, setPdfModalUrl] = useState(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -43,6 +45,7 @@ export default function ProductionLinePage() {
             startDate: order.dateAdded || '',
             dueDate: '',
             assignedTo: '',
+            department: order.department,
           };
         });
 
@@ -204,6 +207,9 @@ export default function ProductionLinePage() {
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Assigned To
                 </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  PDF
+                </th>
                 <th scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -234,6 +240,28 @@ export default function ProductionLinePage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {order.assignedTo}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {pdfMap[order.id] ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setPdfModalUrl(pdfMap[order.id])}
+                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            View
+                          </button>
+                          <a
+                            href={pdfMap[order.id]}
+                            download
+                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            Download
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">-</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button className="text-blue-600 hover:text-blue-900 mr-4">
                         View
@@ -261,6 +289,36 @@ export default function ProductionLinePage() {
           </table>
         </div>
       </div>
+
+      {pdfModalUrl && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setPdfModalUrl(null)}
+          />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-4xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">PDF Preview</h3>
+                <button
+                  type="button"
+                  onClick={() => setPdfModalUrl(null)}
+                  className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex-1">
+                <iframe
+                  src={pdfModalUrl}
+                  className="w-full h-full rounded-b-lg"
+                  title="PDF Preview"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

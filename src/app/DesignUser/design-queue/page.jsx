@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as orderApi from '../orders/api';
+import PdfRowOverlayViewer from '@/components/PdfRowOverlayViewer';
 
 export default function DesignQueuePage() {
   const router = useRouter();
@@ -11,6 +12,11 @@ export default function DesignQueuePage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
+  const [pdfModalUrl, setPdfModalUrl] = useState(null);
+  const [pdfRows, setPdfRows] = useState([]);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [isRowsLoading, setIsRowsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
 
   const createOrder = () => {
@@ -205,7 +211,28 @@ export default function DesignQueuePage() {
                     <div className="flex items-center gap-2 text-xs">
                       <button
                         type="button"
-                        onClick={() => window.open(pdfMap[o.id], '_blank')}
+                        onClick={async () => {
+                          setPdfModalUrl(pdfMap[o.id]);
+                          setPdfRows([]);
+                          setSelectedRowIds([]);
+                          const numericId = String(o.id).replace(/^SF/i, '');
+                          const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                          if (!numericId || !raw) return;
+                          try {
+                            const auth = JSON.parse(raw);
+                            const token = auth?.token;
+                            if (!token) return;
+                            setIsRowsLoading(true);
+                            const resp = await fetch(`http://localhost:8080/pdf/order/${numericId}/rows`, {
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            if (!resp.ok) return;
+                            const rows = await resp.json();
+                            setPdfRows(Array.isArray(rows) ? rows : []);
+                          } finally {
+                            setIsRowsLoading(false);
+                          }
+                        }}
                         className="text-indigo-600 hover:text-indigo-800 hover:underline"
                       >
                         View
@@ -235,6 +262,89 @@ export default function DesignQueuePage() {
           </tbody>
         </table>
       </div>
+
+      {pdfModalUrl && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => {
+              setPdfModalUrl(null);
+              setPdfRows([]);
+              setSelectedRowIds([]);
+            }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-5xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">PDF Preview & Row Selection</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPdfModalUrl(null);
+                    setPdfRows([]);
+                    setSelectedRowIds([]);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <PdfRowOverlayViewer
+                  pdfUrl={pdfModalUrl}
+                  rows={pdfRows}
+                  selectedRowIds={selectedRowIds}
+                  onToggleRow={(rowId, checked) => {
+                    setSelectedRowIds((prev) =>
+                      checked ? [...prev, rowId] : prev.filter((id) => id !== rowId)
+                    );
+                  }}
+                />
+              </div>
+              <div className="p-3 border-t border-gray-200">
+                <button
+                  type="button"
+                  disabled={selectedRowIds.length === 0 || isGenerating}
+                  onClick={async () => {
+                    if (selectedRowIds.length === 0) return;
+                    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                    if (!raw) return;
+                    const auth = JSON.parse(raw);
+                    const token = auth?.token;
+                    if (!token) return;
+
+                    // Find current order numeric ID from modal URL mapping
+                    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                    if (!current) return;
+                    const [orderId] = current;
+                    const numericId = String(orderId).replace(/^SF/i, '');
+                    if (!numericId) return;
+
+                    try {
+                      setIsGenerating(true);
+                      const resp = await fetch(`http://localhost:8080/pdf/order/${numericId}/filter`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ selectedRowIds }),
+                      });
+                      if (!resp.ok) return;
+                      // Optionally refresh status-based PDF map so latest filtered PDF is visible
+                    } finally {
+                      setIsGenerating(false);
+                    }
+                  }}
+                  className="w-full rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                >
+                  {isGenerating ? 'Generating…' : 'Generate Filtered PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
        {showCreateModal && (
           <div className="fixed inset-0 z-50">

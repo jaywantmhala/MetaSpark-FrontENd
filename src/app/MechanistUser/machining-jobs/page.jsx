@@ -12,6 +12,7 @@ export default function DesignQueuePage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
+  const [pdfModalUrl, setPdfModalUrl] = useState(null);
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
 
   const createOrder = () => {
@@ -178,6 +179,7 @@ export default function DesignQueuePage() {
                 <th className="py-3 px-4 font-medium">Product(s)</th>
                 <th className="py-3 px-4 font-medium">Date Created</th>
                 <th className="py-3 px-4 font-medium">Status</th>
+                <th className="py-3 px-4 font-medium">PDF</th>
                 <th className="py-3 px-4 font-medium">Actions</th>
               </tr>
             </thead>
@@ -194,6 +196,28 @@ export default function DesignQueuePage() {
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${badge(o.status)}`}>{o.status}</span>
                   </td>
                   <td className="py-4 px-4">
+                    {pdfMap[o.id] ? (
+                      <div className="flex items-center gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setPdfModalUrl(pdfMap[o.id])}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          View
+                        </button>
+                        <a
+                          href={pdfMap[o.id]}
+                          download
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
+                  </td>
+                  <td className="py-4 px-4">
                     <button 
                       onClick={() => router.push(`/DesignUser/design-queue/${o.id}`)}
                       className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline"
@@ -208,7 +232,37 @@ export default function DesignQueuePage() {
         </div>
       </div>
 
-       {showCreateModal && (
+      {pdfModalUrl && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setPdfModalUrl(null)}
+          />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-4xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">PDF Preview</h3>
+                <button
+                  type="button"
+                  onClick={() => setPdfModalUrl(null)}
+                  className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex-1">
+                <iframe
+                  src={pdfModalUrl}
+                  className="w-full h-full rounded-b-lg"
+                  title="PDF Preview"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateModal && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
             <div className="absolute inset-0 flex items-center justify-center p-4">
