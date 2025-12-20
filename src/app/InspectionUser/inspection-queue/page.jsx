@@ -1,47 +1,100 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import * as orderApi from '../orders/api';
 
 export default function InspectionQueuePage() {
     const [selectedOrder, setSelectedOrder] = useState(null);
-    
-    // Mock data for inspection queue
-    const [orders] = useState([
-        { 
-            id: 'SF1002', 
-            customer: 'Stark Industries', 
-            products: 'Custom arc reactor casings', 
-            address: '10880 Malibu Point, 90265',
-            addressType: 'Billing',
-            shippingAddress: '10880 Malibu Point, 90265',
-            shippingType: 'Shipping',
-            status: 'Inspection',
-            date: 'Nov 15, 2025'
-        },
-        { 
-            id: 'SF1008', 
-            customer: 'Wayne Enterprises', 
-            products: 'Titanium alloy components', 
-            address: '1007 Mountain Drive, Gotham',
-            addressType: 'Billing',
-            shippingAddress: '1007 Mountain Drive, Gotham',
-            shippingType: 'Shipping',
-            status: 'Inspection',
-            date: 'Nov 19, 2025'
-        },
-        { 
-            id: 'SF1010', 
-            customer: 'Cyberdyne Systems', 
-            products: 'Precision gears and shafts', 
-            address: '18144 El Camino Real, Sunnyvale',
-            addressType: 'Billing',
-            shippingAddress: '18144 El Camino Real, Sunnyvale',
-            shippingType: 'Shipping',
-            status: 'Inspection',
-            date: 'Nov 20, 2025'
-        },
-    ]);
+    const [orders, setOrders] = useState([]);
+    const [pdfMap, setPdfMap] = useState({});
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const orders = await orderApi.getAllOrders();
+
+                const transformed = orders.map(order => {
+                    const customer = (order.customers && order.customers[0]) || {};
+
+                    const address = customer.billingAddress || customer.primaryAddress || '';
+                    const shippingAddress = customer.shippingAddress || '';
+
+                    return {
+                        id: `SF${order.orderId}`,
+                        customer: customer.companyName || customer.customerName || 'Unknown Customer',
+                        products: order.customProductDetails || (order.products && order.products[0]
+                            ? `${order.products[0].productCode} - ${order.products[0].productName}`
+                            : 'No Product'),
+                        address,
+                        addressType: 'Billing',
+                        shippingAddress,
+                        shippingType: 'Shipping',
+                        status: order.status || 'Inspection',
+                        date: order.dateAdded || '',
+                    };
+                });
+
+                setOrders(transformed);
+            } catch (err) {
+                console.error('Error fetching orders for inspection queue:', err);
+            }
+        };
+
+        fetchOrders();
+    }, []);
+
+    const filtered = useMemo(() => {
+        return orders.filter(order => {
+            const dept = (order.department || '').toUpperCase();
+            return dept === 'INSPECTION';
+        });
+    }, [orders]);
+
+    useEffect(() => {
+        const fetchPdfInfo = async () => {
+            try {
+                const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                if (!raw) return;
+                const auth = JSON.parse(raw);
+                const token = auth?.token;
+                if (!token) return;
+
+                const entries = await Promise.all(
+                    orders.map(async (order) => {
+                        const numericId = String(order.id).replace(/^SF/i, '');
+                        if (!numericId) return [order.id, null];
+                        try {
+                            const resp = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+                                headers: { Authorization: `Bearer ${token}` }
+                            });
+                            if (!resp.ok) return [order.id, null];
+                            const history = await resp.json();
+                            const withPdf = Array.isArray(history)
+                                ? history.find(h => h.attachmentUrl && h.attachmentUrl.toLowerCase().endsWith('.pdf'))
+                                : null;
+                            return [order.id, withPdf ? withPdf.attachmentUrl : null];
+                        } catch {
+                            return [order.id, null];
+                        }
+                    })
+                );
+
+                const map = {};
+                entries.forEach(([id, url]) => {
+                    map[id] = url;
+                });
+                setPdfMap(map);
+            } catch {
+            }
+        };
+
+        if (orders.length > 0) {
+            fetchPdfInfo();
+        } else {
+            setPdfMap({});
+        }
+    }, [orders]);
 
     return (
         <div className="p-6">
@@ -71,7 +124,7 @@ export default function InspectionQueuePage() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {orders.map((order) => (
+                            {filtered.map((order) => (
                                 <tr key={order.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link href={`/InspectionUser/inspection-queue/${order.id}`} className="text-blue-600 hover:text-blue-800 font-medium">

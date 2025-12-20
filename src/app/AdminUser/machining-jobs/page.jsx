@@ -1,20 +1,16 @@
 
 
-'use client';
-import { useMemo, useState } from 'react';
+"use client";
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
+import * as orderApi from '../orders/api';
 
 export default function ProductionLinePage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [orders, setOrders] = useState([
-    { id: 'SF1005', customer: 'Tyrell Corporation', products: 'Voight-Kampff machine empathy sensors', date: 'Nov 19, 2025', status: 'Inquiry' },
-    { id: 'SF1004', customer: 'Cyberdyne Systems', products: 'T-800 endoskeleton fingers (prototype)', date: 'Nov 17, 2025', status: 'Design' },
-    { id: 'SF1003', customer: 'Wayne Enterprises', products: 'Graphene-composite body armor plates', date: 'Nov 16, 2025', status: 'Machining' },
-    { id: 'SF1002', customer: 'Stark Industries', products: 'Custom arc reactor casings', date: 'Nov 14, 2025', status: 'Inspection' },
-  ]);
+  const [orders, setOrders] = useState([]);
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
 
   const createOrder = () => {
@@ -37,6 +33,51 @@ export default function ProductionLinePage() {
     setShowCreateModal(false);
     setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
   };
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const orders = await orderApi.getAllOrders();
+
+        const transformed = orders.map(order => {
+          let formattedDate = 'Unknown Date';
+          if (order.dateAdded) {
+            const [day, month, year] = order.dateAdded.split('-');
+            if (day && month && year) {
+              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              const monthIndex = parseInt(month) - 1;
+              if (monthIndex >= 0 && monthIndex < 12) {
+                formattedDate = `${parseInt(day)} ${monthNames[monthIndex]} ${year}`;
+              }
+            }
+          }
+
+          const customerName = order.customers && order.customers.length > 0
+            ? (order.customers[0].companyName || order.customers[0].customerName || 'Unknown Customer')
+            : 'Unknown Customer';
+
+          const productText = order.customProductDetails ||
+            (order.products && order.products.length > 0
+              ? `${order.products[0].productCode} - ${order.products[0].productName}`
+              : 'No Product');
+
+          return {
+            id: `SF${order.orderId}`,
+            customer: customerName,
+            products: productText,
+            date: formattedDate,
+            status: order.status || 'Inquiry',
+          };
+        });
+
+        setOrders(transformed);
+      } catch (err) {
+        console.error('Error fetching orders for admin machining jobs:', err);
+      }
+    };
+
+    fetchOrders();
+  }, []);
   const filtered = useMemo(() => {
     return orders.filter(o => {
       const matchesQuery = `${o.id} ${o.customer}`.toLowerCase().includes(query.toLowerCase());

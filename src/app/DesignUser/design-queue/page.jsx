@@ -1,20 +1,16 @@
 
-'use client';
-import { useMemo, useState } from 'react';
+"use client";
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import * as orderApi from '../orders/api';
 
 export default function DesignQueuePage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [orders, setOrders] = useState([
-    { id: 'SF1005', customer: 'Tyrell Corporation', products: 'Voight-Kampff machine empathy sensors', date: 'Nov 19, 2025', status: 'Inquiry' },
-    { id: 'SF1004', customer: 'Cyberdyne Systems', products: 'T-800 endoskeleton fingers (prototype)', date: 'Nov 17, 2025', status: 'Design' },
-    { id: 'SF1003', customer: 'Wayne Enterprises', products: 'Graphene-composite body armor plates', date: 'Nov 16, 2025', status: 'Machining' },
-    { id: 'SF1002', customer: 'Stark Industries', products: 'Custom arc reactor casings', date: 'Nov 14, 2025', status: 'Inspection' },
-  ]);
+  const [orders, setOrders] = useState([]);
+  const [pdfMap, setPdfMap] = useState({});
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
 
   const createOrder = () => {
@@ -37,13 +33,115 @@ export default function DesignQueuePage() {
     setShowCreateModal(false);
     setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
   };
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const orders = await orderApi.getAllOrders();
+
+        const transformed = orders.map(order => {
+          let formattedDate = 'Unknown Date';
+          if (order.dateAdded) {
+            const [day, month, year] = order.dateAdded.split('-');
+            if (day && month && year) {
+              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              const monthIndex = parseInt(month) - 1;
+              if (monthIndex >= 0 && monthIndex < 12) {
+                formattedDate = `${parseInt(day)} ${monthNames[monthIndex]} ${year}`;
+              }
+            }
+          }
+
+          const customerName = order.customers && order.customers.length > 0
+            ? (order.customers[0].companyName || order.customers[0].customerName || 'Unknown Customer')
+            : 'Unknown Customer';
+
+          const productText = order.customProductDetails ||
+            (order.products && order.products.length > 0
+              ? `${order.products[0].productCode} - ${order.products[0].productName}`
+              : 'No Product');
+
+          return {
+            id: `SF${order.orderId}`,
+            customer: customerName,
+            products: productText,
+            date: formattedDate,
+            status: order.status || 'Inquiry',
+            department: order.department,
+          };
+        });
+
+        setOrders(transformed);
+      } catch (err) {
+        console.error('Error fetching orders for design queue:', err);
+      }
+    };
+
+    fetchOrders();
+  }, []);
+
+  useEffect(() => {
+    const fetchPdfInfo = async () => {
+      try {
+        const authDataRaw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+        if (!authDataRaw) {
+          return;
+        }
+        const authData = JSON.parse(authDataRaw);
+        const token = authData?.token;
+        if (!token) {
+          return;
+        }
+
+        const entries = await Promise.all(
+          orders.map(async (order) => {
+            const numericId = String(order.id).replace(/^SF/i, '');
+            if (!numericId) {
+              return [order.id, null];
+            }
+            try {
+              const response = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              if (!response.ok) {
+                return [order.id, null];
+              }
+              const history = await response.json();
+              const withAttachment = Array.isArray(history)
+                ? history.find((item) => item.attachmentUrl && item.attachmentUrl.toLowerCase().endsWith('.pdf'))
+                : null;
+              return [order.id, withAttachment ? withAttachment.attachmentUrl : null];
+            } catch {
+              return [order.id, null];
+            }
+          })
+        );
+
+        const map = {};
+        entries.forEach(([id, url]) => {
+          map[id] = url;
+        });
+        setPdfMap(map);
+      } catch {
+      }
+    };
+
+    if (orders.length > 0) {
+      fetchPdfInfo();
+    } else {
+      setPdfMap({});
+    }
+  }, [orders]);
+
   const filtered = useMemo(() => {
     return orders.filter(o => {
       const matchesQuery = `${o.id} ${o.customer}`.toLowerCase().includes(query.toLowerCase());
-      const matchesStatus = status === 'all' ? true : o.status.toLowerCase() === status;
-      return matchesQuery && matchesStatus;
+      const dept = (o.department || '').toUpperCase();
+      const matchesDepartment = dept === 'DESIGN';
+      return matchesQuery && matchesDepartment;
     });
-  }, [orders, query, status]);
+  }, [orders, query]);
 
   const badge = (s) => {
     const map = {
@@ -75,15 +173,6 @@ export default function DesignQueuePage() {
             />
           </div>
         </div>
-        <div>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900">
-            <option value="all">all</option>
-            <option value="inquiry">Inquiry</option>
-            <option value="design">Design</option>
-            <option value="machining">Machining</option>
-            <option value="inspection">Inspection</option>
-          </select>
-        </div>
       </div>
 
       <div className="mt-4 overflow-x-auto">
@@ -95,6 +184,7 @@ export default function DesignQueuePage() {
               <th className="py-3 px-4 font-medium">Product(s)</th>
               <th className="py-3 px-4 font-medium">Date Created</th>
               <th className="py-3 px-4 font-medium">Status</th>
+              <th className="py-3 px-4 font-medium">PDF</th>
               <th className="py-3 px-4 font-medium">Actions</th>
             </tr>
           </thead>
@@ -109,6 +199,28 @@ export default function DesignQueuePage() {
                 <td className="py-4 px-4 text-gray-700">{o.date}</td>
                 <td className="py-4 px-4">
                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${badge(o.status)}`}>{o.status}</span>
+                </td>
+                <td className="py-4 px-4">
+                  {pdfMap[o.id] ? (
+                    <div className="flex items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => window.open(pdfMap[o.id], '_blank')}
+                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                      >
+                        View
+                      </button>
+                      <a
+                        href={pdfMap[o.id]}
+                        download
+                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                      >
+                        Download
+                      </a>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-xs">-</span>
+                  )}
                 </td>
                 <td className="py-4 px-4">
                   <button 

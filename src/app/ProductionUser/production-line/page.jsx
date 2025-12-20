@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import * as orderApi from '../orders/api';
 
 // Status badge component
 const StatusBadge = ({ status }) => {
@@ -24,48 +25,97 @@ export default function ProductionLinePage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const router = useRouter();
 
-  // Sample data - replace with actual data fetching
-  const productionOrders = [
-    { 
-      id: 'PO-1001', 
-      product: 'Steel Bracket', 
-      quantity: 50, 
-      status: 'In Progress', 
-      startDate: '2023-11-20', 
-      dueDate: '2023-11-27',
-      priority: 'High',
-      assignedTo: 'John Doe'
-    },
-    { 
-      id: 'PO-1002', 
-      product: 'Aluminum Panel', 
-      quantity: 30, 
-      status: 'Pending', 
-      startDate: '2023-11-22', 
-      dueDate: '2023-11-29',
-      priority: 'Medium',
-      assignedTo: 'Jane Smith'
-    },
-    { 
-      id: 'PO-1003', 
-      product: 'Copper Pipe', 
-      quantity: 100, 
-      status: 'Completed', 
-      startDate: '2023-11-15', 
-      dueDate: '2023-11-25',
-      priority: 'Low',
-      assignedTo: 'Mike Johnson'
-    },
-  ];
+  const [orders, setOrders] = useState([]);
 
-  // Filter orders based on search and status
-  const filteredOrders = productionOrders.filter(order => {
-    const matchesSearch = 
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.product.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const orders = await orderApi.getAllOrders();
+
+        const transformed = orders.map(order => {
+          const product = (order.products && order.products[0]) || {};
+
+          return {
+            id: `SF${order.orderId}`,
+            product: product.productName || product.productCode || 'Unknown Product',
+            quantity: order.units || '',
+            status: order.status || 'Production',
+            startDate: order.dateAdded || '',
+            dueDate: '',
+            assignedTo: '',
+          };
+        });
+
+        setOrders(transformed);
+      } catch (err) {
+        console.error('Error fetching orders for production line:', err);
+      }
+    };
+
+    fetchOrders();
+  }, []);
+
+  useEffect(() => {
+    const fetchPdfInfo = async () => {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+        if (!raw) return;
+        const auth = JSON.parse(raw);
+        const token = auth?.token;
+        if (!token) return;
+
+        const entries = await Promise.all(
+          orders.map(async (order) => {
+            const numericId = String(order.id).replace(/^SF/i, '');
+            if (!numericId) return [order.id, null];
+            try {
+              const resp = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!resp.ok) return [order.id, null];
+              const history = await resp.json();
+              const withPdf = Array.isArray(history)
+                ? history.find((h) => h.attachmentUrl && h.attachmentUrl.toLowerCase().endsWith('.pdf'))
+                : null;
+              return [order.id, withPdf ? withPdf.attachmentUrl : null];
+            } catch {
+              return [order.id, null];
+            }
+          })
+        );
+
+        const map = {};
+        entries.forEach(([id, url]) => {
+          map[id] = url;
+        });
+        setPdfMap(map);
+      } catch {
+      }
+    };
+
+    if (orders.length > 0) {
+      fetchPdfInfo();
+    } else {
+      setPdfMap({});
+    }
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    return orders
+      // First, restrict this screen to PRODUCTION department orders
+      .filter(order => {
+        const dept = (order.department || '').toUpperCase();
+        return dept === 'PRODUCTION';
+      })
+      // Then apply search and optional local status filter
+      .filter(order => {
+        const matchesSearch =
+          order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (order.product || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
+        return matchesSearch && matchesStatus;
+      });
+  }, [orders, searchQuery, statusFilter]);
 
   const statusOptions = ['All', 'In Progress', 'Pending', 'Completed', 'On Hold'];
 
