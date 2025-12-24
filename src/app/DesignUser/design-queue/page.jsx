@@ -10,11 +10,17 @@ export default function DesignQueuePage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [toast, setToast] = useState({ message: '', type: '' }); // type: 'success' | 'error'
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
   const [pdfRows, setPdfRows] = useState([]);
-  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [partsRows, setPartsRows] = useState([]);
+  const [materialRows, setMaterialRows] = useState([]);
+  const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
+  const [selectedPartsRowNos, setSelectedPartsRowNos] = useState([]);
+  const [selectedMaterialRowNos, setSelectedMaterialRowNos] = useState([]);
+  const [activePdfTab, setActivePdfTab] = useState('subnest'); // 'subnest' | 'parts' | 'material'
   const [isRowsLoading, setIsRowsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
@@ -114,10 +120,22 @@ export default function DesignQueuePage() {
                 return [order.id, null];
               }
               const history = await response.json();
-              const withAttachment = Array.isArray(history)
+              // Prefer DESIGN PDF as source
+              const designPdf = Array.isArray(history)
+                ? history
+                    .filter((item) =>
+                      item.attachmentUrl &&
+                      item.attachmentUrl.toLowerCase().endsWith('.pdf') &&
+                      (item.newStatus || '').toUpperCase() === 'DESIGN'
+                    )
+                    .sort((a, b) => a.id - b.id)
+                    .at(-1)
+                : null;
+              const fallbackPdf = Array.isArray(history)
                 ? history.find((item) => item.attachmentUrl && item.attachmentUrl.toLowerCase().endsWith('.pdf'))
                 : null;
-              return [order.id, withAttachment ? withAttachment.attachmentUrl : null];
+              const chosen = designPdf || fallbackPdf;
+              return [order.id, chosen ? chosen.attachmentUrl : null];
             } catch {
               return [order.id, null];
             }
@@ -166,6 +184,25 @@ export default function DesignQueuePage() {
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Design Department</h1>
           <p className="text-sm text-gray-600 mt-1">Manage orders in the inquiry and design phase.</p>
         </div>
+
+      {toast.message && (
+        <div
+          className={`fixed top-4 right-4 z-[60] px-4 py-2 rounded-md text-sm shadow-lg border flex items-center gap-2 ${
+            toast.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}
+        >
+          <span>{toast.message}</span>
+          <button
+            type="button"
+            onClick={() => setToast({ message: '', type: '' })}
+            className="ml-2 text-xs font-semibold hover:underline"
+          >
+            Close
+          </button>
+        </div>
+      )}
       </div>
 
       <div className="mt-5 flex flex-col lg:flex-row lg:items-center gap-3">
@@ -214,21 +251,44 @@ export default function DesignQueuePage() {
                         onClick={async () => {
                           setPdfModalUrl(pdfMap[o.id]);
                           setPdfRows([]);
-                          setSelectedRowIds([]);
-                          const numericId = String(o.id).replace(/^SF/i, '');
+                          setPartsRows([]);
+                          setMaterialRows([]);
+                          setSelectedSubnestRowNos([]);
+                          setSelectedPartsRowNos([]);
+                          setSelectedMaterialRowNos([]);
                           const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-                          if (!numericId || !raw) return;
+                          if (!raw) return;
                           try {
                             const auth = JSON.parse(raw);
                             const token = auth?.token;
                             if (!token) return;
                             setIsRowsLoading(true);
-                            const resp = await fetch(`http://localhost:8080/pdf/order/${numericId}/rows`, {
-                              headers: { Authorization: `Bearer ${token}` },
-                            });
-                            if (!resp.ok) return;
-                            const rows = await resp.json();
-                            setPdfRows(Array.isArray(rows) ? rows : []);
+
+                            const attachmentUrl = pdfMap[o.id];
+                            const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+                            const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+                            const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+
+                            const headers = { Authorization: `Bearer ${token}` };
+
+                            const [subnestRes, partsRes, materialRes] = await Promise.all([
+                              fetch(baseSubnest, { headers }),
+                              fetch(baseParts, { headers }),
+                              fetch(baseMaterial, { headers }),
+                            ]);
+
+                            if (subnestRes.ok) {
+                              const data = await subnestRes.json();
+                              setPdfRows(Array.isArray(data) ? data : []);
+                            }
+                            if (partsRes.ok) {
+                              const data = await partsRes.json();
+                              setPartsRows(Array.isArray(data) ? data : []);
+                            }
+                            if (materialRes.ok) {
+                              const data = await materialRes.json();
+                              setMaterialRows(Array.isArray(data) ? data : []);
+                            }
                           } finally {
                             setIsRowsLoading(false);
                           }
@@ -270,11 +330,13 @@ export default function DesignQueuePage() {
             onClick={() => {
               setPdfModalUrl(null);
               setPdfRows([]);
-              setSelectedRowIds([]);
+              setPartsRows([]);
+              setMaterialRows([]);
+              setSelectedSubnestRowNos([]);
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-5xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
+            <div className="w-full max-w-6xl h-[85vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between p-3 border-b border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-900">PDF Preview & Row Selection</h3>
                 <button
@@ -282,38 +344,210 @@ export default function DesignQueuePage() {
                   onClick={() => {
                     setPdfModalUrl(null);
                     setPdfRows([]);
-                    setSelectedRowIds([]);
+                    setPartsRows([]);
+                    setMaterialRows([]);
+                    setSelectedSubnestRowNos([]);
+                    setSelectedPartsRowNos([]);
+                    setSelectedMaterialRowNos([]);
                   }}
                   className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                 >
                   ×
                 </button>
               </div>
-              <div className="flex-1 min-h-0">
-                <PdfRowOverlayViewer
-                  pdfUrl={pdfModalUrl}
-                  rows={pdfRows}
-                  selectedRowIds={selectedRowIds}
-                  onToggleRow={(rowId, checked) => {
-                    setSelectedRowIds((prev) =>
-                      checked ? [...prev, rowId] : prev.filter((id) => id !== rowId)
-                    );
-                  }}
-                />
+              <div className="flex-1 min-h-0 flex">
+                <div className="w-1/2 border-r border-gray-200">
+                  <PdfRowOverlayViewer
+                    pdfUrl={pdfModalUrl}
+                    rows={[]}
+                    selectedRowIds={[]}
+                    onToggleRow={() => {}}
+                    showCheckboxes={false}
+                  />
+                </div>
+                <div className="w-1/2 flex flex-col">
+                  <div className="border-b border-gray-200 flex items-center justify-between px-3 py-2 text-xs">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={activePdfTab === 'subnest' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('subnest')}
+                      >
+                        SubNest
+                      </button>
+                      <button
+                        type="button"
+                        className={activePdfTab === 'parts' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('parts')}
+                      >
+                        Parts
+                      </button>
+                      <button
+                        type="button"
+                        className={activePdfTab === 'material' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('material')}
+                      >
+                        Material Data
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-auto p-2 text-xs">
+                    {activePdfTab === 'subnest' && (
+                      <table className="min-w-full text-xs border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-700 border-b border-gray-200">
+                            <th className="px-2 py-1">No.</th>
+                            <th className="px-2 py-1">Size X</th>
+                            <th className="px-2 py-1">Size Y</th>
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1">Time / inst.</th>
+                            <th className="px-2 py-1">Total time</th>
+                            <th className="px-2 py-1">NC file</th>
+                            <th className="px-2 py-1">Qty</th>
+                            <th className="px-2 py-1">Area (m²)</th>
+                            <th className="px-2 py-1">Eff. %</th>
+                            <th className="px-2 py-1 text-center">Select</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-gray-900 divide-y divide-gray-100">
+                          {pdfRows.map((row) => (
+                            <tr key={row.rowNo}>
+                              <td className="px-2 py-1 font-medium">{row.rowNo}</td>
+                              <td className="px-2 py-1">{row.sizeX}</td>
+                              <td className="px-2 py-1">{row.sizeY}</td>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1 whitespace-nowrap">{row.timePerInstance}</td>
+                              <td className="px-2 py-1 whitespace-nowrap">{row.totalTime}</td>
+                              <td className="px-2 py-1">{row.ncFile}</td>
+                              <td className="px-2 py-1 text-right">{row.qty}</td>
+                              <td className="px-2 py-1 text-right">{row.areaM2}</td>
+                              <td className="px-2 py-1 text-right">{row.efficiencyPercent}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedSubnestRowNos.includes(row.rowNo)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setSelectedSubnestRowNos((prev) =>
+                                      checked
+                                        ? [...prev, row.rowNo]
+                                        : prev.filter((n) => n !== row.rowNo)
+                                    );
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {activePdfTab === 'parts' && (
+                      <table className="min-w-full text-xs border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-700 border-b border-gray-200">
+                            <th className="px-2 py-1">No.</th>
+                            <th className="px-2 py-1">Part name</th>
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1">Req. qty</th>
+                            <th className="px-2 py-1">Placed qty</th>
+                            <th className="px-2 py-1">Weight (kg)</th>
+                            <th className="px-2 py-1">Time / inst.</th>
+                            <th className="px-2 py-1">Pierce qty</th>
+                            <th className="px-2 py-1">Cut length</th>
+                            <th className="px-2 py-1 text-center">Select</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-gray-900 divide-y divide-gray-100">
+                          {partsRows.map((row) => (
+                            <tr key={row.rowNo}>
+                              <td className="px-2 py-1 font-medium">{row.rowNo}</td>
+                              <td className="px-2 py-1">{row.partName}</td>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1 text-right">{row.requiredQty}</td>
+                              <td className="px-2 py-1 text-right">{row.placedQty}</td>
+                              <td className="px-2 py-1 text-right">{row.weightKg}</td>
+                              <td className="px-2 py-1 whitespace-nowrap">{row.timePerInstance}</td>
+                              <td className="px-2 py-1 text-right">{row.pierceQty}</td>
+                              <td className="px-2 py-1 text-right">{row.cuttingLength}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPartsRowNos.includes(row.rowNo)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setSelectedPartsRowNos((prev) =>
+                                      checked
+                                        ? [...prev, row.rowNo]
+                                        : prev.filter((n) => n !== row.rowNo)
+                                    );
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {activePdfTab === 'material' && (
+                      <table className="min-w-full text-xs border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-700 border-b border-gray-200">
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1">Size X</th>
+                            <th className="px-2 py-1">Size Y</th>
+                            <th className="px-2 py-1">Sheet qty.</th>
+                            <th className="px-2 py-1">Notes</th>
+                            <th className="px-2 py-1 text-center">Select</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-gray-900 divide-y divide-gray-100">
+                          {materialRows.map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1">{row.sizeX}</td>
+                              <td className="px-2 py-1">{row.sizeY}</td>
+                              <td className="px-2 py-1 text-right">{row.sheetQty}</td>
+                              <td className="px-2 py-1">{row.notes}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedMaterialRowNos.includes(idx)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setSelectedMaterialRowNos((prev) =>
+                                      checked
+                                        ? [...prev, idx]
+                                        : prev.filter((n) => n !== idx)
+                                    );
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="p-3 border-t border-gray-200">
                 <button
                   type="button"
-                  disabled={selectedRowIds.length === 0 || isGenerating}
+                  disabled={selectedSubnestRowNos.length === 0 || isGenerating}
                   onClick={async () => {
-                    if (selectedRowIds.length === 0) return;
+                    if (selectedSubnestRowNos.length === 0) return;
                     const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
                     if (!raw) return;
                     const auth = JSON.parse(raw);
                     const token = auth?.token;
                     if (!token) return;
 
-                    // Find current order numeric ID from modal URL mapping
                     const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
                     if (!current) return;
                     const [orderId] = current;
@@ -322,23 +556,40 @@ export default function DesignQueuePage() {
 
                     try {
                       setIsGenerating(true);
-                      const resp = await fetch(`http://localhost:8080/pdf/order/${numericId}/filter`, {
+                      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
                           Authorization: `Bearer ${token}`,
                         },
-                        body: JSON.stringify({ selectedRowIds }),
+                        body: JSON.stringify({ selectedRowIds: selectedSubnestRowNos.map(String) }),
                       });
-                      if (!resp.ok) return;
-                      // Optionally refresh status-based PDF map so latest filtered PDF is visible
+                      if (!res.ok) {
+                        let msg = 'Failed to save selection';
+                        try {
+                          const data = await res.json();
+                          if (data && data.message) msg = data.message;
+                        } catch {}
+                        setToast({ message: msg, type: 'error' });
+                        return;
+                      }
+
+                      setToast({ message: 'Selection saved and sent to Production successfully.', type: 'success' });
+                      // Optionally close the modal after success
+                      setPdfModalUrl(null);
+                      setPdfRows([]);
+                      setPartsRows([]);
+                      setMaterialRows([]);
+                      setSelectedSubnestRowNos([]);
+                      setSelectedPartsRowNos([]);
+                      setSelectedMaterialRowNos([]);
                     } finally {
                       setIsGenerating(false);
                     }
                   }}
                   className="w-full rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
                 >
-                  {isGenerating ? 'Generating…' : 'Generate Filtered PDF'}
+                  {isGenerating ? 'Saving…' : 'Save & Send to Production'}
                 </button>
               </div>
             </div>

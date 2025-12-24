@@ -39,6 +39,16 @@ const createHeaders = () => {
   return headers;
 };
 
+// Headers for file upload (no explicit Content-Type so browser sets boundary)
+const createUploadHeaders = () => {
+  const headers = {};
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 // Create a new customer
 export const createCustomer = async (customerData) => {
   const response = await fetch(`${API_BASE_URL}/create`, {
@@ -111,6 +121,19 @@ export const deleteCustomer = async (id) => {
   const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
     method: 'DELETE',
     headers: createHeaders(),
+  });
+  return handleResponse(response);
+};
+
+// Upload customers from Excel
+export const uploadCustomersExcel = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/upload-excel`, {
+    method: 'POST',
+    headers: createUploadHeaders(),
+    body: formData,
   });
   return handleResponse(response);
 };

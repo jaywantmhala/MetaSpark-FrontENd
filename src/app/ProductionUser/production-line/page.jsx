@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as orderApi from '../orders/api';
+import PdfRowOverlayViewer from '@/components/PdfRowOverlayViewer';
 
 // Status badge component
 const StatusBadge = ({ status }) => {
@@ -28,6 +29,14 @@ export default function ProductionLinePage() {
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
+  const [pdfRows, setPdfRows] = useState([]);
+  const [partsRows, setPartsRows] = useState([]);
+  const [materialRows, setMaterialRows] = useState([]);
+  const [designerSelectedRowIds, setDesignerSelectedRowIds] = useState([]); // rows selected by Designer (read-only)
+  const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]); // local selection by Production
+  const [isSendingToMachine, setIsSendingToMachine] = useState(false);
+  const [activePdfTab, setActivePdfTab] = useState('subnest');
+  const [toast, setToast] = useState({ message: '', type: '' });
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -78,7 +87,15 @@ export default function ProductionLinePage() {
               if (!resp.ok) return [order.id, null];
               const history = await resp.json();
               const withPdf = Array.isArray(history)
-                ? history.find((h) => h.attachmentUrl && h.attachmentUrl.toLowerCase().endsWith('.pdf'))
+                ? history
+                    .filter(
+                      (h) =>
+                        h.attachmentUrl &&
+                        h.attachmentUrl.toLowerCase().endsWith('.pdf') &&
+                        (h.newStatus === 'PRODUCTION' || h.newStatus === 'PRODUCTION_READY')
+                    )
+                    .sort((a, b) => a.id - b.id)
+                    .at(-1)
                 : null;
               return [order.id, withPdf ? withPdf.attachmentUrl : null];
             } catch {
@@ -105,10 +122,10 @@ export default function ProductionLinePage() {
 
   const filteredOrders = useMemo(() => {
     return orders
-      // First, restrict this screen to PRODUCTION department orders
+      // Restrict this screen to PRODUCTION or PRODUCTION_READY department orders
       .filter(order => {
         const dept = (order.department || '').toUpperCase();
-        return dept === 'PRODUCTION';
+        return dept === 'PRODUCTION' || dept === 'PRODUCTION_READY';
       })
       // Then apply search and optional local status filter
       .filter(order => {
@@ -245,7 +262,61 @@ export default function ProductionLinePage() {
                         <div className="flex items-center gap-2 text-xs">
                           <button
                             type="button"
-                            onClick={() => setPdfModalUrl(pdfMap[order.id])}
+                            onClick={async () => {
+                              const url = pdfMap[order.id];
+                              if (!url) return;
+                              setPdfModalUrl(url);
+                              setPdfRows([]);
+                              setPartsRows([]);
+                              setMaterialRows([]);
+                              setDesignerSelectedRowIds([]);
+                              setProductionSelectedRowNos([]);
+
+                              const numericId = String(order.id).replace(/^SF/i, '');
+                              const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                              if (!numericId || !raw) return;
+                              try {
+                                const auth = JSON.parse(raw);
+                                const token = auth?.token;
+                                if (!token) return;
+
+                                const attachmentUrl = url;
+                                const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+                                const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+                                const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+
+                                const headers = { Authorization: `Bearer ${token}` };
+
+                                const [subnestRes, partsRes, materialRes, selRes] = await Promise.all([
+                                  fetch(baseSubnest, { headers }),
+                                  fetch(baseParts, { headers }),
+                                  fetch(baseMaterial, { headers }),
+                                  fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, { headers }),
+                                ]);
+
+                                if (subnestRes.ok) {
+                                  const data = await subnestRes.json();
+                                  setPdfRows(Array.isArray(data) ? data : []);
+                                }
+                                if (partsRes.ok) {
+                                  const data = await partsRes.json();
+                                  setPartsRows(Array.isArray(data) ? data : []);
+                                }
+                                if (materialRes.ok) {
+                                  const data = await materialRes.json();
+                                  setMaterialRows(Array.isArray(data) ? data : []);
+                                }
+                                if (selRes.ok) {
+                                  const selJson = await selRes.json();
+                                  const ids = Array.isArray(selJson.selectedRowIds) ? selJson.selectedRowIds : [];
+                                  const stringIds = ids.map(String);
+                                  setDesignerSelectedRowIds(stringIds);
+                                  // initialise production selection with designer's selection so they see same ticks but can change
+                                  setProductionSelectedRowNos(stringIds.map(Number));
+                                }
+                              } catch {
+                              }
+                            }}
                             className="text-blue-600 hover:text-blue-800 hover:underline"
                           >
                             View
@@ -292,28 +363,294 @@ export default function ProductionLinePage() {
 
       {pdfModalUrl && (
         <div className="fixed inset-0 z-50">
+          {toast.message && (
+            <div
+              className={`absolute top-4 right-4 z-[60] px-4 py-2 rounded-md text-sm shadow-lg border flex items-center gap-2 ${
+                toast.type === 'success'
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
+              <span>{toast.message}</span>
+              <button
+                type="button"
+                onClick={() => setToast({ message: '', type: '' })}
+                className="ml-2 text-xs font-semibold hover:underline"
+              >
+                Close
+              </button>
+            </div>
+          )}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setPdfModalUrl(null)}
+            onClick={() => {
+              setPdfModalUrl(null);
+              setPdfRows([]);
+              setPartsRows([]);
+              setMaterialRows([]);
+              setDesignerSelectedRowIds([]);
+              setProductionSelectedRowNos([]);
+            }}
           />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-4xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col">
+            <div className="w-full max-w-6xl h-[85vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between p-3 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900">PDF Preview</h3>
+                <h3 className="text-sm font-semibold text-gray-900">PDF Preview & Designer Selection</h3>
                 <button
                   type="button"
-                  onClick={() => setPdfModalUrl(null)}
+                  onClick={() => {
+                    setPdfModalUrl(null);
+                    setPdfRows([]);
+                    setPartsRows([]);
+                    setMaterialRows([]);
+                    setDesignerSelectedRowIds([]);
+                    setProductionSelectedRowNos([]);
+                  }}
                   className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                 >
                   ×
                 </button>
               </div>
-              <div className="flex-1">
-                <iframe
-                  src={pdfModalUrl}
-                  className="w-full h-full rounded-b-lg"
-                  title="PDF Preview"
-                />
+              <div className="flex-1 min-h-0 flex">
+                <div className="w-1/2 border-r border-gray-200">
+                  <PdfRowOverlayViewer
+                    pdfUrl={pdfModalUrl}
+                    rows={[]}
+                    selectedRowIds={[]}
+                    onToggleRow={() => {}}
+                    initialScale={1.1}
+                    showCheckboxes={false}
+                  />
+                </div>
+                <div className="w-1/2 flex flex-col">
+                  <div className="border-b border-gray-200 flex items-center justify-between px-3 py-2 text-xs">
+                    <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                        onClick={() => setPdfModalUrl(null)}
+                      >
+                        Close
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSendingToMachine || productionSelectedRowNos.length === 0}
+                        onClick={async () => {
+                          const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                          if (!current) return;
+                          const [orderId] = current;
+                          const numericId = String(orderId).replace(/^SF/i, '');
+                          if (!numericId) return;
+
+                          const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                          if (!raw) return;
+                          const auth = JSON.parse(raw);
+                          const token = auth?.token;
+                          if (!token) return;
+
+                          try {
+                            setIsSendingToMachine(true);
+                            await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ selectedRowIds: productionSelectedRowNos.map(String) }),
+                            });
+                          } finally {
+                            setIsSendingToMachine(false);
+                          }
+                        }}
+                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2 px-4"
+                      >
+                        {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={activePdfTab === 'subnest' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('subnest')}
+                      >
+                        SubNest
+                      </button>
+                      <button
+                        type="button"
+                        className={activePdfTab === 'parts' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('parts')}
+                      >
+                        Parts
+                      </button>
+                      <button
+                        type="button"
+                        className={activePdfTab === 'material' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                        onClick={() => setActivePdfTab('material')}
+                      >
+                        Material Data
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-auto p-2 text-xs text-gray-900">
+                    {activePdfTab === 'subnest' && (
+                      <table className="min-w-full border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-600">
+                            <th className="px-2 py-1">No.</th>
+                            <th className="px-2 py-1">Size X</th>
+                            <th className="px-2 py-1">Size Y</th>
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1">Time / inst.</th>
+                            <th className="px-2 py-1">Total time</th>
+                            <th className="px-2 py-1">NC file</th>
+                            <th className="px-2 py-1">Qty</th>
+                            <th className="px-2 py-1">Area (m²)</th>
+                            <th className="px-2 py-1">Eff. %</th>
+                            <th className="px-2 py-1 text-center">Selected</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {pdfRows.map((row) => (
+                            <tr key={row.rowNo}>
+                              <td className="px-2 py-1">{row.rowNo}</td>
+                              <td className="px-2 py-1">{row.sizeX}</td>
+                              <td className="px-2 py-1">{row.sizeY}</td>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1 whitespace-nowrap">{row.timePerInstance}</td>
+                              <td className="px-2 py-1 whitespace-nowrap">{row.totalTime}</td>
+                              <td className="px-2 py-1">{row.ncFile}</td>
+                              <td className="px-2 py-1">{row.qty}</td>
+                              <td className="px-2 py-1">{row.areaM2}</td>
+                              <td className="px-2 py-1">{row.efficiencyPercent}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionSelectedRowNos.includes(row.rowNo)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setProductionSelectedRowNos((prev) =>
+                                      checked
+                                        ? [...prev, row.rowNo]
+                                        : prev.filter((n) => n !== row.rowNo)
+                                    );
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {activePdfTab === 'parts' && (
+                      <table className="min-w-full border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-600">
+                            <th className="px-2 py-1">No.</th>
+                            <th className="px-2 py-1">Part name</th>
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {partsRows.map((row) => (
+                            <tr key={row.rowNo}>
+                              <td className="px-2 py-1">{row.rowNo}</td>
+                              <td className="px-2 py-1">{row.partName}</td>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {activePdfTab === 'material' && (
+                      <table className="min-w-full border border-gray-200">
+                        <thead>
+                          <tr className="text-left text-gray-600">
+                            <th className="px-2 py-1">Material</th>
+                            <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1">Size X</th>
+                            <th className="px-2 py-1">Size Y</th>
+                            <th className="px-2 py-1">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {materialRows.map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="px-2 py-1">{row.material}</td>
+                              <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1">{row.sizeX}</td>
+                              <td className="px-2 py-1">{row.sizeY}</td>
+                              <td className="px-2 py-1">{row.sheetQty}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                  <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-3 text-xs">
+                    <button
+                      type="button"
+                      className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                      onClick={() => setPdfModalUrl(null)}
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSendingToMachine || productionSelectedRowNos.length === 0}
+                      onClick={async () => {
+                        const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                        if (!current) return;
+                        const [orderId] = current;
+                        const numericId = String(orderId).replace(/^SF/i, '');
+                        if (!numericId) return;
+
+                        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                        if (!raw) return;
+                        const auth = JSON.parse(raw);
+                        const token = auth?.token;
+                        if (!token) return;
+
+                        try {
+                          setIsSendingToMachine(true);
+                          const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({ selectedRowIds: productionSelectedRowNos.map(String) }),
+                          });
+
+                          let msg = '';
+                          let type = '';
+
+                          if (!res.ok) {
+                            msg = 'Failed to send to Machine';
+                            try {
+                              const data = await res.json();
+                              if (data && data.message) msg = data.message;
+                            } catch {}
+                            type = 'error';
+                          } else {
+                            msg = 'Selection sent to Machine successfully.';
+                            type = 'success';
+                          }
+
+                          setToast({ message: msg, type });
+                        } finally {
+                          setIsSendingToMachine(false);
+                        }
+                      }}
+                      className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                    >
+                      {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

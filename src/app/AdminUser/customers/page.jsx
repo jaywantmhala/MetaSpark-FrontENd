@@ -17,6 +17,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [form, setForm] = useState({
     customerName: '',
@@ -36,14 +37,14 @@ export default function CustomersPage() {
   }, []);
 
   const parseBackendDate = (dateString) => {
-  if (!dateString) return null;
-  const parts = dateString.split('-');
-  if (parts.length === 3) {
-    const [day, month, year] = parts;
-    return new Date(`${month}-${day}-${year}`);
-  }
-  return new Date(dateString);
-};
+    if (!dateString) return null;
+    const parts = dateString.split('-');
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      return new Date(`${month}-${day}-${year}`);
+    }
+    return new Date(dateString);
+  };
 
   const fetchCustomers = async () => {
     try {
@@ -194,6 +195,21 @@ export default function CustomersPage() {
     }
   };
 
+  const handleExcelUpload = async (event) => {
+    setIsUploading(true);
+    try {
+      const file = event.target.files[0];
+      await customerApi.uploadCustomersExcel(file);
+      toast.success('Customers uploaded successfully');
+      await fetchCustomers();
+    } catch (err) {
+      console.error('Error uploading customers:', err);
+      toast.error(`Error uploading customers: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="w-full p-6">
@@ -215,12 +231,24 @@ export default function CustomersPage() {
             <h1 className="text-xl sm:text-2xl font-semibold text-black">Customer Management</h1>
             <p className="text-xs sm:text-sm text-black/70">View, manage, and add new customers.</p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md w-full sm:w-auto"
-          >
-            <span>＋</span> Add Customer
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto justify-end">
+            <label className="inline-flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium px-4 py-2 rounded-md cursor-pointer w-full sm:w-auto">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleExcelUpload}
+                disabled={isUploading}
+              />
+              {isUploading ? 'Uploading…' : 'Upload Excel'}
+            </label>
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md w-full sm:w-auto"
+            >
+              <span>＋</span> Add Customer
+            </button>
+          </div>
         </div>
 
         {error && (
