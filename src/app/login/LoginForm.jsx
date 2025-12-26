@@ -124,7 +124,7 @@ export default function LoginForm() {
   return (
     <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to SwiftFlow</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to MetaSpark</h1>
         <p className="text-gray-600">Please sign in to continue</p>
       </div>
       

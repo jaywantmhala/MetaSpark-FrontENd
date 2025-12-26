@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, use } from 'react';
 import Sidebar from '@/components/Sidebar';
 
 const STEPS = ['Inquiry', 'Design', 'Production', 'Machining', 'Inspection', 'Completed'];
@@ -231,7 +231,7 @@ const OrderDetailsPanel = ({ isOpen, onClose, orderId }) => {
 
 export default function OrderDetailsPage({ params }) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
-  const { id } = params || {};
+  const { id } = React.use(params);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

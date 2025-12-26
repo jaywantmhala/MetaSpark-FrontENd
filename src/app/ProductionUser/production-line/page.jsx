@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as orderApi from '../orders/api';
 import PdfRowOverlayViewer from '@/components/PdfRowOverlayViewer';
+import { getAllMachines, addMachine } from '../../AdminUser/machines/api';
 
 // Status badge component
 const StatusBadge = ({ status }) => {
@@ -37,6 +38,15 @@ export default function ProductionLinePage() {
   const [isSendingToMachine, setIsSendingToMachine] = useState(false);
   const [activePdfTab, setActivePdfTab] = useState('subnest');
   const [toast, setToast] = useState({ message: '', type: '' });
+  const [showSelectMachineModal, setShowSelectMachineModal] = useState(false);
+  const [showAddMachineModal, setShowAddMachineModal] = useState(false);
+  const [machines, setMachines] = useState([]);
+  const [machinesLoading, setMachinesLoading] = useState(false);
+  const [selectedMachineId, setSelectedMachineId] = useState('');
+  const [addMachineForm, setAddMachineForm] = useState({
+    name: '',
+    status: 'Active',
+  });
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -119,6 +129,19 @@ export default function ProductionLinePage() {
       setPdfMap({});
     }
   }, [orders]);
+
+  const ensureMachinesLoaded = async () => {
+    if (machines.length > 0 || machinesLoading) return;
+    try {
+      setMachinesLoading(true);
+      const data = await getAllMachines();
+      setMachines(data || []);
+    } catch (err) {
+      console.error('Error loading machines for selection:', err);
+    } finally {
+      setMachinesLoading(false);
+    }
+  };
 
   const filteredOrders = useMemo(() => {
     return orders
@@ -333,14 +356,14 @@ export default function ProductionLinePage() {
                         <span className="text-gray-400 text-xs">-</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    {/* <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button className="text-blue-600 hover:text-blue-900 mr-4">
                         View
                       </button>
                       <button className="text-indigo-600 hover:text-indigo-900">
                         Edit
                       </button>
-                    </td>
+                    </td> */}
                   </tr>
                 ))
               ) : (
@@ -372,13 +395,13 @@ export default function ProductionLinePage() {
               }`}
             >
               <span>{toast.message}</span>
-              <button
+              {/* <button
                 type="button"
                 onClick={() => setToast({ message: '', type: '' })}
                 className="ml-2 text-xs font-semibold hover:underline"
               >
                 Close
-              </button>
+              </button> */}
             </div>
           )}
           <div
@@ -425,14 +448,14 @@ export default function ProductionLinePage() {
                 <div className="w-1/2 flex flex-col">
                   <div className="border-b border-gray-200 flex items-center justify-between px-3 py-2 text-xs">
                     <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-3">
-                      <button
+                      {/* <button
                         type="button"
                         className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1"
                         onClick={() => setPdfModalUrl(null)}
                       >
                         Close
-                      </button>
-                      <button
+                      </button> */}
+                      {/* <button
                         type="button"
                         disabled={isSendingToMachine || productionSelectedRowNos.length === 0}
                         onClick={async () => {
@@ -465,7 +488,7 @@ export default function ProductionLinePage() {
                         className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2 px-4"
                       >
                         {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
-                      </button>
+                      </button> */}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -590,69 +613,223 @@ export default function ProductionLinePage() {
                       </table>
                     )}
                   </div>
-                  <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-3 text-xs">
-                    <button
+                  <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs">
+                    {/* <button
                       type="button"
                       className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
                       onClick={() => setPdfModalUrl(null)}
                     >
                       Close
-                    </button>
+                    </button> */}
                     <button
                       type="button"
-                      disabled={isSendingToMachine || productionSelectedRowNos.length === 0}
+                      disabled={productionSelectedRowNos.length === 0}
                       onClick={async () => {
-                        const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
-                        if (!current) return;
-                        const [orderId] = current;
-                        const numericId = String(orderId).replace(/^SF/i, '');
-                        if (!numericId) return;
-
-                        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-                        if (!raw) return;
-                        const auth = JSON.parse(raw);
-                        const token = auth?.token;
-                        if (!token) return;
-
-                        try {
-                          setIsSendingToMachine(true);
-                          const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              Authorization: `Bearer ${token}`,
-                            },
-                            body: JSON.stringify({ selectedRowIds: productionSelectedRowNos.map(String) }),
-                          });
-
-                          let msg = '';
-                          let type = '';
-
-                          if (!res.ok) {
-                            msg = 'Failed to send to Machine';
-                            try {
-                              const data = await res.json();
-                              if (data && data.message) msg = data.message;
-                            } catch {}
-                            type = 'error';
-                          } else {
-                            msg = 'Selection sent to Machine successfully.';
-                            type = 'success';
-                          }
-
-                          setToast({ message: msg, type });
-                        } finally {
-                          setIsSendingToMachine(false);
-                        }
+                        await ensureMachinesLoaded();
+                        setShowSelectMachineModal(true);
                       }}
                       className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
                     >
-                      {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
+                      Select Machine
                     </button>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select Machine Modal */}
+      {pdfModalUrl && showSelectMachineModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm"
+            onClick={() => setShowSelectMachineModal(false)}
+          />
+          <div
+            className="relative bg-white rounded-lg w-full max-w-md shadow-lg border border-gray-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900">Select Machine</h3>
+              <button
+                type="button"
+                onClick={() => setShowSelectMachineModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-sm">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-gray-700">Machine</label>
+                <button
+                  type="button"
+                  onClick={() => setShowAddMachineModal(true)}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
+                >
+                  Add Machine
+                </button>
+              </div>
+              <select
+                value={selectedMachineId}
+                onChange={(e) => setSelectedMachineId(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="">{machinesLoading ? 'Loading machines…' : 'Select a machine'}</option>
+                {machines.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.machineName} ({m.status})
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={isSendingToMachine || !selectedMachineId || productionSelectedRowNos.length === 0}
+                  onClick={async () => {
+                    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                    if (!current) return;
+                    const [orderId] = current;
+                    const numericId = String(orderId).replace(/^SF/i, '');
+                    if (!numericId) return;
+
+                    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                    if (!raw) return;
+                    const auth = JSON.parse(raw);
+                    const token = auth?.token;
+                    if (!token) return;
+
+                    try {
+                      setIsSendingToMachine(true);
+                      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                          selectedRowIds: productionSelectedRowNos.map(String),
+                          machineId: selectedMachineId,
+                        }),
+                      });
+
+                      let msg = '';
+                      let type = '';
+
+                      if (!res.ok) {
+                        msg = 'Failed to send to Machine';
+                        try {
+                          const data = await res.json();
+                          if (data && data.message) msg = data.message;
+                        } catch {}
+                        type = 'error';
+                      } else {
+                        msg = 'Selection sent to Machine successfully.';
+                        type = 'success';
+                        setShowSelectMachineModal(false);
+                      }
+
+                      setToast({ message: msg, type });
+                    } finally {
+                      setIsSendingToMachine(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs"
+                >
+                  {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Machine Modal (nested) */}
+      {pdfModalUrl && showSelectMachineModal && showAddMachineModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm"
+            onClick={() => setShowAddMachineModal(false)}
+          />
+          <div
+            className="relative bg-white rounded-lg w-full max-w-md shadow-lg border border-gray-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900">Add Machine</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddMachineModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <form
+              className="p-4 space-y-4 text-sm"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const newMachine = await addMachine({
+                    name: addMachineForm.name,
+                    status: addMachineForm.status,
+                    dateAdded: new Date().toISOString().split('T')[0],
+                  });
+                  // Refresh / update machines list
+                  setMachines((prev) => {
+                    const existing = prev || [];
+                    // avoid duplicates by id
+                    const without = existing.filter((m) => m.id !== newMachine.id);
+                    return [...without, newMachine];
+                  });
+                  setSelectedMachineId(String(newMachine.id));
+                  setAddMachineForm({ name: '', status: 'Active' });
+                  setShowAddMachineModal(false);
+                } catch (err) {
+                  console.error('Error adding machine from production screen:', err);
+                  alert('Failed to add machine: ' + (err?.message || 'Unknown error'));
+                }
+              }}
+            >
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Machine Name</label>
+                <input
+                  type="text"
+                  value={addMachineForm.name}
+                  onChange={(e) => setAddMachineForm((prev) => ({ ...prev, name: e.target.value }))}
+                  required
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={addMachineForm.status}
+                  onChange={(e) => setAddMachineForm((prev) => ({ ...prev, status: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMachineModal(false)}
+                  className="px-3 py-2 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+                >
+                  Add Machine
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

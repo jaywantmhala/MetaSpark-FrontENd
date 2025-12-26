@@ -214,9 +214,9 @@ export default function DesignQueuePage() {
             <h1 className="text-3xl font-bold text-gray-900">All Orders</h1>
             <p className="text-sm text-gray-600 mt-1">Oversee and manage all active and completed orders.</p>
           </div>
-          <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">
+          {/* <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">
             <span>＋</span> Create Order
-          </button>
+          </button> */}
         </div>
 
         <div className="mt-5 flex items-center gap-3">
@@ -270,7 +270,7 @@ export default function DesignQueuePage() {
                       onClick={() => setSelectedOrder(o)}
                       className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline"
                     >
-                      View Details
+                      View
                     </button>
                   </td>
                 </tr>

@@ -140,7 +140,7 @@ export default function Sidebar({ user }) {
     <div className="h-full flex flex-col">
       {/* Logo */}
       <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-gray-200">
-        <h1 className="text-xl font-bold text-blue-600">SwiftFlow</h1>
+        <h1 className="text-xl font-bold text-blue-600">MetaSpark</h1>
       </div>
       
       {/* Navigation */}

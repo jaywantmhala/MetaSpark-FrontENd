@@ -16,19 +16,26 @@ export default function ClientLayout({ children }) {
   const [user, setUser] = useState(null);
 
   const handleLogout = () => {
+    console.log('handleLogout called');
     try {
       if (typeof window !== 'undefined') {
+        console.log('Clearing localStorage and sessionStorage');
+        // Clear all possible auth keys
         localStorage.removeItem('swiftflow-user');
         localStorage.removeItem('swiftflow-token');
         localStorage.removeItem('auth-token');
-        // Also update the user state to null
+        // Also clear any session storage
+        sessionStorage.clear();
+        // Update the user state to null
         setUser(null);
+        console.log('Storage cleared, redirecting to login');
       }
     } finally {
-      // Use router.push to navigate to login page
-      router.push('/');
-      // Also close the user menu
+      // Close the user menu
       setShowUserMenu(false);
+      // Use window.location.href for hard redirect to ensure clean state
+      console.log('Redirecting to /login');
+      window.location.href = '/login';
     }
   };
 
@@ -159,7 +166,7 @@ export default function ClientLayout({ children }) {
                         <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
                         <p className="text-xs text-gray-500 truncate">{user?.email || ''}</p>
                       </div>
-                      <a
+                      {/* <a
                         href="#"
                         className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                         role="menuitem"
@@ -176,11 +183,11 @@ export default function ClientLayout({ children }) {
                         id="user-menu-item-1"
                       >
                         Settings
-                      </a>
+                      </a> */}
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
+                        onClick={() => {
+                          console.log('Mobile Sign out button clicked');
+                          setShowUserMenu(false);
                           handleLogout();
                         }}
                         className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
@@ -238,7 +245,7 @@ export default function ClientLayout({ children }) {
                       <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
                       <p className="text-xs text-gray-500 truncate">{user?.email || ''}</p>
                     </div>
-                    <a
+                    {/* <a
                       href="#"
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       role="menuitem"
@@ -255,11 +262,11 @@ export default function ClientLayout({ children }) {
                       id="desktop-user-menu-item-1"
                     >
                       Settings
-                    </a>
+                    </a> */}
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
+                      onClick={() => {
+                        console.log('Desktop Sign out button clicked');
+                        setShowUserMenu(false);
                         handleLogout();
                       }}
                       className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"

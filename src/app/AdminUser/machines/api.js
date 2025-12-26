@@ -61,3 +61,30 @@ export const getAllMachines = async () => {
   });
   return handleResponse(response);
 };
+
+// Update a machine
+export const updateMachine = async (id, machineData) => {
+  const response = await fetch(`${API_BASE_URL}/update-machine/${id}`, {
+    method: 'PUT',
+    headers: createHeaders(),
+    body: JSON.stringify({
+      machineName: machineData.name,
+      status: machineData.status,
+      dateAdded: machineData.dateAdded,
+    }),
+  });
+  return handleResponse(response);
+};
+
+// Delete a machine
+export const deleteMachine = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/delete-machine/${id}`, {
+    method: 'DELETE',
+    headers: createHeaders(),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'Failed to delete machine');
+  }
+};

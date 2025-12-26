@@ -50,7 +50,7 @@ const MOCK_ORDERS = [
 const STATUS_STEPS = ['Inquiry', 'Design', 'Production', 'Machining', 'Inspection', 'Completed'];
 
 export default function DesignQueueDetailsPage({ params }) {
-  const { id } = params;
+  const { id } = React.use(params);
 
   // For now, use mock data if available; otherwise fall back to a generic object
   const found = MOCK_ORDERS.find(o => o.id === id);

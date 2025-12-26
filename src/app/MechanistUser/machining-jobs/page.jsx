@@ -20,6 +20,7 @@ export default function DesignQueuePage() {
   const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
   const [activePdfTab, setActivePdfTab] = useState('subnest');
   const [isSaving, setIsSaving] = useState(false);
+  const [machineNameMap, setMachineNameMap] = useState({});
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
 
   const createOrder = () => {
@@ -48,14 +49,26 @@ export default function DesignQueuePage() {
       try {
         const orders = await orderApi.getAllOrders();
 
-        const transformed = orders.map((order) => {
-          const product = (order.products && order.products[0]) || {};
-          const customer = (order.customer && (order.customer.customerName || order.customer.companyName)) || 'Unknown Customer';
+        const sorted = Array.isArray(orders)
+          ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+          : [];
+
+        const transformed = sorted.map((order) => {
+          // Customer name from customers array (new backend shape) with fallback
+          const customerName = order.customers && order.customers.length > 0
+            ? (order.customers[0].companyName || order.customers[0].customerName || 'Unknown Customer')
+            : 'Unknown Customer';
+
+          // Product text from customProductDetails or first product entry
+          const productText = order.customProductDetails ||
+            (order.products && order.products.length > 0
+              ? `${order.products[0].productCode || ''} ${order.products[0].productName || ''}`.trim() || 'No Product'
+              : 'No Product');
 
           return {
             id: `SF${order.orderId}`,
-            customer,
-            products: product.productName || product.productCode || '—',
+            customer: customerName,
+            products: productText,
             date: order.dateAdded || '',
             status: order.status || 'Machining',
             department: order.department,
@@ -96,7 +109,7 @@ export default function DesignQueuePage() {
                       (h) =>
                         h.attachmentUrl &&
                         h.attachmentUrl.toLowerCase().endsWith('.pdf') &&
-                        (h.newStatus === 'PRODUCTION' || h.newStatus === 'PRODUCTION_READY')
+                        (h.newStatus === 'PRODUCTION' || h.newStatus === 'PRODUCTION_READY' || h.newStatus === 'MACHINING')
                     )
                     .sort((a, b) => a.id - b.id)
                     .at(-1)
@@ -113,6 +126,35 @@ export default function DesignQueuePage() {
           map[id] = url;
         });
         setPdfMap(map);
+
+        // Also fetch machining selection to get assigned machine name
+        const machEntries = await Promise.all(
+          orders.map(async (order) => {
+            const numericId = String(order.id).replace(/^SF/i, '');
+            if (!numericId) return [order.id, null];
+            try {
+              const selResp = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!selResp.ok) return [order.id, null];
+              const selJson = await selResp.json();
+              const machineName = selJson && typeof selJson.machineName === 'string' && selJson.machineName.trim() !== ''
+                ? selJson.machineName.trim()
+                : null;
+              return [order.id, machineName];
+            } catch {
+              return [order.id, null];
+            }
+          })
+        );
+
+        const machineMap = {};
+        machEntries.forEach(([id, name]) => {
+          if (name) {
+            machineMap[id] = name;
+          }
+        });
+        setMachineNameMap(machineMap);
       } catch {
       }
     };
@@ -180,8 +222,9 @@ export default function DesignQueuePage() {
                 <th className="py-3 px-4 font-medium">Product(s)</th>
                 <th className="py-3 px-4 font-medium">Date Created</th>
                 <th className="py-3 px-4 font-medium">Status</th>
+                <th className="py-3 px-4 font-medium">Assign Machine</th>
                 <th className="py-3 px-4 font-medium">PDF</th>
-                <th className="py-3 px-4 font-medium">Actions</th>
+                {/* <th className="py-3 px-4 font-medium">Actions</th> */}
               </tr>
             </thead>
             <tbody>
@@ -195,6 +238,9 @@ export default function DesignQueuePage() {
                   <td className="py-4 px-4 text-gray-700">{o.date}</td>
                   <td className="py-4 px-4">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${badge(o.status)}`}>{o.status}</span>
+                  </td>
+                  <td className="py-4 px-4 text-gray-700 text-sm">
+                    {machineNameMap[o.id] || '-'}
                   </td>
                   <td className="py-4 px-4">
                     {pdfMap[o.id] ? (
@@ -277,14 +323,14 @@ export default function DesignQueuePage() {
                       <span className="text-gray-400 text-xs">-</span>
                     )}
                   </td>
-                  <td className="py-4 px-4">
+                  {/* <td className="py-4 px-4">
                     <button 
                       onClick={() => router.push(`/DesignUser/design-queue/${o.id}`)}
                       className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline"
                     >
                       View Details
                     </button>
-                  </td>
+                  </td> */}
                 </tr>
               ))}
             </tbody>
@@ -510,7 +556,7 @@ export default function DesignQueuePage() {
                       }}
                       className="w-full rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
                     >
-                      {isSaving ? 'Sending to Machine…' : 'Save & Send to Machine'}
+                      {isSaving ? 'Sending to Inspection…' : 'Save & Send to Inspection'}
                     </button>
                   </div>
                 </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FiEye, FiEdit, FiTrash2 } from 'react-icons/fi';
-import { addMachine, getAllMachines } from './api.js'; // Import API functions
+import { addMachine, getAllMachines, updateMachine, deleteMachine } from './api.js'; // Import API functions
 
 const StatusBadge = ({ status }) => {
   const statusStyles = {
@@ -29,11 +29,18 @@ const StatusBadge = ({ status }) => {
 export default function MachinesPage() {
   const [openMenu, setOpenMenu] = useState(null);
   const [showAddMachineModal, setShowAddMachineModal] = useState(false);
+  const [showViewMachineModal, setShowViewMachineModal] = useState(false);
+  const [showEditMachineModal, setShowEditMachineModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     status: 'Active',
     dateAdded: new Date().toISOString().split('T')[0],
   });
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    status: 'Active',
+  });
+  const [selectedMachine, setSelectedMachine] = useState(null);
   const [machines, setMachines] = useState([]); // State for machines data
   const [loading, setLoading] = useState(true); // Loading state
   const [error, setError] = useState(null); // Error state
@@ -81,6 +88,53 @@ export default function MachinesPage() {
     } catch (err) {
       console.error('Error adding machine:', err);
       alert('Failed to add machine: ' + err.message);
+    }
+  };
+
+  const handleEditInputChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!selectedMachine) return;
+
+    try {
+      const updated = await updateMachine(selectedMachine.id, {
+        name: editFormData.name,
+        status: editFormData.status,
+        dateAdded: selectedMachine.dateAdded,
+      });
+
+      setMachines((prev) =>
+        prev.map((m) => (m.id === updated.id ? updated : m))
+      );
+
+      setShowEditMachineModal(false);
+      setSelectedMachine(null);
+    } catch (err) {
+      console.error('Error updating machine:', err);
+      alert('Failed to update machine: ' + err.message);
+    }
+  };
+
+  const handleDeleteMachine = async (machine) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete machine "${machine.machineName}"?`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      await deleteMachine(machine.id);
+      setMachines((prev) => prev.filter((m) => m.id !== machine.id));
+    } catch (err) {
+      console.error('Error deleting machine:', err);
+      alert('Failed to delete machine: ' + err.message);
     }
   };
 
@@ -162,8 +216,8 @@ export default function MachinesPage() {
                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Date Added
                   </th>
-                  <th className="relative px-6 py-3">
-                    <span className="sr-only">Actions</span>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -188,7 +242,8 @@ export default function MachinesPage() {
                           className="p-1 text-blue-600 hover:text-blue-800"
                           onClick={(e) => { 
                             e.stopPropagation();
-                            // Handle view action
+                            setSelectedMachine(machine);
+                            setShowViewMachineModal(true);
                           }}
                           aria-label="View"
                         >
@@ -199,7 +254,12 @@ export default function MachinesPage() {
                           className="p-1 text-green-600 hover:text-green-800"
                           onClick={(e) => { 
                             e.stopPropagation();
-                            // Handle edit action
+                            setSelectedMachine(machine);
+                            setEditFormData({
+                              name: machine.machineName,
+                              status: machine.status,
+                            });
+                            setShowEditMachineModal(true);
                           }}
                           aria-label="Edit"
                         >
@@ -210,7 +270,7 @@ export default function MachinesPage() {
                           className="p-1 text-red-600 hover:text-red-800"
                           onClick={(e) => { 
                             e.stopPropagation();
-                            // Handle delete action
+                            handleDeleteMachine(machine);
                           }}
                           aria-label="Delete"
                         >
@@ -263,15 +323,39 @@ export default function MachinesPage() {
                   {openMenu === `mobile-${machine.id}` && (
                     <div className="absolute right-0 mt-1 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
                       <div className="py-1" role="menu">
-                        <button className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <button
+                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            setSelectedMachine(machine);
+                            setShowViewMachineModal(true);
+                            setOpenMenu(null);
+                          }}
+                        >
                           <FiEye size={16} className="mr-2" />
                           View Details
                         </button>
-                        <button className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <button
+                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            setSelectedMachine(machine);
+                            setEditFormData({
+                              name: machine.machineName,
+                              status: machine.status,
+                            });
+                            setShowEditMachineModal(true);
+                            setOpenMenu(null);
+                          }}
+                        >
                           <FiEdit size={16} className="mr-2" />
                           Edit
                         </button>
-                        <button className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                        <button
+                          className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                          onClick={() => {
+                            handleDeleteMachine(machine);
+                            setOpenMenu(null);
+                          }}
+                        >
                           <FiTrash2 size={16} className="mr-2" />
                           Delete
                         </button>
@@ -291,9 +375,9 @@ export default function MachinesPage() {
       {/* Add Machine Modal */}
       {showAddMachineModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* dark background */}
+          {/* light blurred background */}
           <div
-            className="absolute inset-0 bg-black bg-opacity-40"
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm"
             onClick={() => setShowAddMachineModal(false)}
           />
           {/* modal */}
@@ -376,6 +460,172 @@ export default function MachinesPage() {
                   className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
                   Add Machine
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Machine Modal */}
+      {showViewMachineModal && selectedMachine && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm"
+            onClick={() => {
+              setShowViewMachineModal(false);
+              setSelectedMachine(null);
+            }}
+          />
+          <div
+            className="relative bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Machine Details</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewMachineModal(false);
+                  setSelectedMachine(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-3 text-sm text-gray-700">
+              <div>
+                <span className="font-medium">Machine Name: </span>
+                <span>{selectedMachine.machineName}</span>
+              </div>
+              <div>
+                <span className="font-medium">Status: </span>
+                <StatusBadge status={selectedMachine.status} />
+              </div>
+              <div>
+                <span className="font-medium">Date Added: </span>
+                <span>{selectedMachine.dateAdded}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Machine Modal */}
+      {showEditMachineModal && selectedMachine && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm"
+            onClick={() => {
+              setShowEditMachineModal(false);
+              setSelectedMachine(null);
+            }}
+          />
+          <div
+            className="relative bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Edit Machine</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEditMachineModal(false);
+                  setSelectedMachine(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Machine Name
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={editFormData.name}
+                  onChange={handleEditInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  name="status"
+                  value={editFormData.status}
+                  onChange={handleEditInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date Added
+                </label>
+                <input
+                  type="text"
+                  value={selectedMachine.dateAdded}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 cursor-not-allowed"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditMachineModal(false);
+                    setSelectedMachine(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
