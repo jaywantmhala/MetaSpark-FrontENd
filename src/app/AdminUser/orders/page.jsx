@@ -15,7 +15,10 @@ export default function AllOrdersPage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState('');
@@ -88,13 +91,14 @@ export default function AllOrdersPage() {
                 customer: order.customers && order.customers.length > 0
                   ? (order.customers[0].companyName || order.customers[0].customerName || 'Unknown Customer')
                   : 'Unknown Customer',
-                products: order.customProductDetails ||
-                  (order.products && order.products.length > 0
-                    ? `${order.products[0].productCode} - ${order.products[0].productName}`
-                    : 'No Product'),
+                products: (order.products && order.products.length > 0
+                  ? order.products[0].productName
+                  : order.customProductDetails) || 'No Product',
                 date: formattedDate,
                 status: order.status || 'Inquiry',
                 dept: department,
+                address: order.customers && order.customers.length > 0 ? order.customers[0].primaryAddress || 'N/A' : 'N/A',
+                addressType: '', // Default address type
               };
             })
         : [];
@@ -226,11 +230,115 @@ export default function AllOrdersPage() {
       toast.success('Order created successfully');
       await fetchOrders();
       setShowModal(false);
-      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
+      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
       setFormError('');
     } catch (e) {
       console.error('Error creating order from AllOrdersPage:', e);
       const msg = e.message || 'Error creating order';
+      setFormError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleView = async (order) => {
+    try {
+      const orderId = order.id.replace('SF', '');
+      const response = await fetch(`http://localhost:8080/order/getById/${orderId}`, {
+        headers: {
+          'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
+        }
+      });
+      
+      if (response.ok) {
+        const orderData = await response.json();
+        setSelectedOrder(orderData);
+        setShowViewModal(true);
+      } else {
+        toast.error('Failed to fetch order details');
+      }
+    } catch (error) {
+      console.error('Error viewing order:', error);
+      toast.error('Error fetching order details');
+    }
+  };
+
+  const handleEdit = async (order) => {
+    try {
+      const orderId = order.id.replace('SF', '');
+      const response = await fetch(`http://localhost:8080/order/getById/${orderId}`, {
+        headers: {
+          'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
+        }
+      });
+      
+      if (response.ok) {
+        const orderData = await response.json();
+        setSelectedOrder(orderData);
+        setForm({
+          customer: orderData.customers?.[0]?.customerId || '',
+          products: orderData.products?.[0]?.productId || '',
+          custom: orderData.customProductDetails || '',
+          units: orderData.units || '',
+          material: orderData.material || '',
+          dept: orderData.department || '',
+          billingAddress: orderData.customers?.[0]?.billingAddress || '',
+          shippingAddress: orderData.customers?.[0]?.shippingAddress || '',
+          addressType: ''
+        });
+        setShowEditModal(true);
+      } else {
+        toast.error('Failed to fetch order details');
+      }
+    } catch (error) {
+      console.error('Error editing order:', error);
+      toast.error('Error fetching order details');
+    }
+  };
+
+  const updateOrder = async () => {
+    try {
+      setFormError('');
+
+      if (!form.dept) {
+        const msg = 'Please select department';
+        setFormError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      const orderId = selectedOrder.orderId;
+      const orderData = {
+        customProductDetails: form.custom || '',
+        units: form.units || '',
+        material: form.material || '',
+        department: form.dept,
+        customerId: parseInt(form.customer) || null,
+        productId: parseInt(form.products) || null,
+      };
+
+      const response = await fetch(`http://localhost:8080/order/update/${orderId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
+        },
+        body: JSON.stringify(orderData)
+      });
+      
+      if (response.ok) {
+        toast.success('Order updated successfully');
+        await fetchOrders();
+        setShowEditModal(false);
+        setSelectedOrder(null);
+        setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
+        setFormError('');
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update order');
+      }
+    } catch (e) {
+      console.error('Error updating order:', e);
+      const msg = e.message || 'Error updating order';
       setFormError(msg);
       toast.error(msg);
     }
@@ -281,7 +389,11 @@ export default function AllOrdersPage() {
           ) : error ? (
             <div className="mt-4 text-sm text-red-600">{error}</div>
           ) : (
-            <OrdersTable rows={filtered} />
+            <OrdersTable rows={filtered} onView={handleView} onEdit={handleEdit} onDelete={(order) => {
+              if (confirm(`Are you sure you want to delete order ${order.id}?`)) {
+                console.log('Delete order:', order);
+              }
+            }} />
           )}
         </div>
 
@@ -289,12 +401,12 @@ export default function AllOrdersPage() {
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={()=>setShowModal(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg bg-white rounded-lg shadow-xl border border-gray-200">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <div className="w-full max-w-lg bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-black">Create New Order</h3>
                 <button onClick={()=>setShowModal(false)} className="text-black">×</button>
               </div>
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-4 overflow-y-auto flex-1">
                 {formError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                     <p className="text-red-700 text-sm">{formError}</p>
@@ -402,7 +514,7 @@ export default function AllOrdersPage() {
                   </select>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200">
+              <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 flex-shrink-0">
                 <button onClick={()=>setShowModal(false)} className="px-4 py-2 rounded-md border border-gray-300 text-black">Cancel</button>
                 <button onClick={createOrder} className="px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white">Create Order</button>
               </div>
@@ -642,12 +754,225 @@ export default function AllOrdersPage() {
           </div>
         </div>
       )}
+      {/* View Order Modal */}
+      {showViewModal && selectedOrder && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowViewModal(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+                <h3 className="text-lg font-semibold text-black">Order Details - {selectedOrder.orderId}</h3>
+                <button onClick={() => setShowViewModal(false)} className="text-black">×</button>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
+                    <dl className="space-y-2">
+                      <div>
+                        <dt className="text-sm text-gray-500">Customer Name:</dt>
+                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.customerName || 'N/A'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-gray-500">Company Name:</dt>
+                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.companyName || 'N/A'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-gray-500">Email:</dt>
+                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.customerEmail || 'N/A'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Order Information</h4>
+                    <dl className="space-y-2">
+                      <div>
+                        <dt className="text-sm text-gray-500">Order ID:</dt>
+                        <dd className="text-sm text-gray-900">SF{selectedOrder.orderId}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-gray-500">Date Added:</dt>
+                        <dd className="text-sm text-gray-900">{selectedOrder.dateAdded}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-gray-500">Status:</dt>
+                        <dd className="text-sm text-gray-900">{selectedOrder.status}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Product Details</h4>
+                  <dl className="space-y-2">
+                    <div>
+                      <dt className="text-sm text-gray-500">Product(s):</dt>
+                      <dd className="text-sm text-gray-900">
+                        {selectedOrder.products?.map(p => `${p.productCode} - ${p.productName}`).join(', ') || 'N/A'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-500">Custom Product Details:</dt>
+                      <dd className="text-sm text-gray-900">{selectedOrder.customProductDetails || 'N/A'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-500">Units:</dt>
+                      <dd className="text-sm text-gray-900">{selectedOrder.units || 'N/A'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-500">Material:</dt>
+                      <dd className="text-sm text-gray-900">{selectedOrder.material || 'N/A'}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Address Information</h4>
+                  <div className="space-y-3">
+                    <div className="bg-gray-50 p-3 rounded">
+                      <div className="text-xs font-medium text-gray-500 mb-1">PRIMARY ADDRESS</div>
+                      <p className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.primaryAddress || 'N/A'}</p>
+                    </div>
+                    <div className="bg-blue-50 p-3 rounded">
+                      <div className="text-xs font-medium text-blue-700 mb-1">BILLING ADDRESS</div>
+                      <p className="text-sm text-blue-900">{selectedOrder.customers?.[0]?.billingAddress || 'N/A'}</p>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded">
+                      <div className="text-xs font-medium text-green-700 mb-1">SHIPPING ADDRESS</div>
+                      <p className="text-sm text-green-900">{selectedOrder.customers?.[0]?.shippingAddress || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 flex-shrink-0">
+                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 rounded-md border border-gray-300 text-black">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Order Modal */}
+      {showEditModal && selectedOrder && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowEditModal(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+                <h3 className="text-lg font-semibold text-black">Edit Order - SF{selectedOrder.orderId}</h3>
+                <button onClick={() => setShowEditModal(false)} className="text-black">×</button>
+              </div>
+              <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                {formError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-red-700 text-sm">{formError}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-black">Customer</label>
+                  <select
+                    value={form.customer}
+                    onChange={(e) => setForm((f) => ({ ...f, customer: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                  >
+                    <option value="">Select Customer...</option>
+                    {Array.isArray(customerData) && customerData.length > 0 ? (
+                      customerData.map((customer) => (
+                        <option
+                          key={customer.customerId}
+                          value={customer.customerId}
+                        >
+                          {customer.companyName || customer.customerName}
+                        </option>
+                      ))
+                    ) : (
+                      <option disabled>No customers available</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-black">Products</label>
+                  <select
+                    value={form.products}
+                    onChange={(e) => setForm((f) => ({ ...f, products: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                  >
+                    <option value="">Select Products...</option>
+                    {Array.isArray(productData) && productData.length > 0 ? (
+                      productData.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.productCode} - {product.productName}
+                        </option>
+                      ))
+                    ) : (
+                      <option disabled>No products available</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-black">Custom Product Details</label>
+                  <textarea
+                    value={form.custom}
+                    onChange={(e) => setForm((f) => ({ ...f, custom: e.target.value }))}
+                    placeholder="For custom, one-off products, describe them here..."
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm min-h-[90px] text-black"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-black">Units</label>
+                    <input
+                      value={form.units}
+                      onChange={(e) => setForm((f) => ({ ...f, units: e.target.value }))}
+                      type="number"
+                      placeholder="e.g. 500"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-black">Material</label>
+                    <input
+                      value={form.material}
+                      onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))}
+                      type="text"
+                      placeholder="e.g. Stainless Steel 316"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-black">Assign to Department</label>
+                  <select
+                    value={form.dept}
+                    onChange={(e) => setForm((f) => ({ ...f, dept: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                  >
+                    <option value="">Select initial department...</option>
+                    <option value="ENQUIRY">Enquiry</option>
+                    <option value="DESIGN">Design</option>
+                    <option value="PRODUCTION">Production</option>
+                    <option value="MACHINING">Machining</option>
+                    <option value="INSPECTION">Inspection</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 flex-shrink-0">
+                <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-md border border-gray-300 text-black">
+                  Cancel
+                </button>
+                <button onClick={updateOrder} className="px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white">
+                  Update Order
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // OrdersTable component
-function OrdersTable({ rows = [] }) {
+function OrdersTable({ rows = [], onView, onEdit, onDelete }) {
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
@@ -658,7 +983,8 @@ function OrdersTable({ rows = [] }) {
             <th className="py-2 px-3">Product(s)</th>
             <th className="py-2 px-3">Date Created</th>
             <th className="py-2 px-3">Status</th>
-            {/* <th className="py-2 px-3">Actions</th> */}
+            <th className="py-2 px-3">Address</th>
+            <th className="py-2 px-3">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -675,9 +1001,39 @@ function OrdersTable({ rows = [] }) {
                   {r.status}
                 </span>
               </td>
-              {/* <td className="py-2 px-3">
-                <Link href={`/orders/${r.id}`} className="text-black underline">View Details</Link>
-              </td> */}
+              <td className="py-2 px-3 text-black max-w-xs truncate" title={r.address}>{r.address}</td>
+              <td className="py-2 px-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onView(r)}
+                    className="text-blue-600 hover:text-blue-800 p-1 rounded"
+                    title="View"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => onEdit(r)}
+                    className="text-green-600 hover:text-green-800 p-1 rounded"
+                    title="Edit"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => onDelete(r)}
+                    className="text-red-600 hover:text-red-800 p-1 rounded"
+                    title="Delete"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>

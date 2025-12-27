@@ -180,7 +180,7 @@ export default function InspectionQueuePage() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address Type</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PDF</th>
+                                {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PDF</th> */}
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
@@ -226,7 +226,7 @@ export default function InspectionQueuePage() {
                                             {order.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {pdfMap[order.id] ? (
                                             <div className="flex items-center gap-2 text-xs">
                                                 <button
@@ -247,7 +247,7 @@ export default function InspectionQueuePage() {
                                         ) : (
                                             <span className="text-gray-400 text-xs">-</span>
                                         )}
-                                    </td>
+                                    </td> */}
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         <button 
                                             onClick={() => setSelectedOrder(order)}
@@ -369,9 +369,14 @@ export default function InspectionQueuePage() {
 
             {/* Order Details Modal */}
             {selectedOrder && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <div className="fixed inset-0 z-50">
+                    <div
+                        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                        onClick={() => setSelectedOrder(null)}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-900">Order {selectedOrder.id} Details</h3>
                             <button 
                                 onClick={() => setSelectedOrder(null)}
@@ -449,6 +454,7 @@ export default function InspectionQueuePage() {
                                     Request Changes
                                 </button>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </div>

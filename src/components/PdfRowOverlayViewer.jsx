@@ -10,16 +10,29 @@ const PdfPageWithOverlay = ({ pdf, pageNumber, scale, rows, selectedRowIds, onTo
 
   useEffect(() => {
     let cancelled = false;
+    let renderTask = null;
 
     const renderPage = async () => {
-      if (!pdf) return;
+      if (!pdf || cancelled) return;
+      
       const page = await pdf.getPage(pageNumber);
+      if (cancelled) return;
+      
       const viewport = page.getViewport({ scale });
       const baseViewport = page.getViewport({ scale: 1 });
 
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      if (!canvas || cancelled) return;
       const context = canvas.getContext('2d');
+
+      // Clear any existing render task
+      if (renderTask) {
+        try {
+          renderTask.cancel();
+        } catch (e) {
+          // Ignore cancellation errors
+        }
+      }
 
       // Render sharply on HiDPI screens
       const outputScale = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -37,14 +50,29 @@ const PdfPageWithOverlay = ({ pdf, pageNumber, scale, rows, selectedRowIds, onTo
         viewport,
       };
 
-      await page.render(renderContext).promise;
-      if (cancelled) return;
+      renderTask = page.render(renderContext);
+      try {
+        await renderTask.promise;
+        if (cancelled) return;
+      } catch (error) {
+        if (error.name === 'RenderingCancelledException') {
+          return;
+        }
+        console.error('PDF render error:', error);
+      }
     };
 
     renderPage();
 
     return () => {
       cancelled = true;
+      if (renderTask) {
+        try {
+          renderTask.cancel();
+        } catch (e) {
+          // Ignore cancellation errors
+        }
+      }
     };
   }, [pdf, pageNumber, scale]);
 

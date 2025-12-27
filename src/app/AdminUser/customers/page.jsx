@@ -29,6 +29,8 @@ export default function CustomersPage() {
     primaryAddress: '',
     useAsBilling: true,
     useAsShipping: true,
+    billingAddress: '',
+    shippingAddress: '',
   });
 
   // Fetch customers when component mounts
@@ -133,6 +135,8 @@ export default function CustomersPage() {
         primaryAddress: '',
         useAsBilling: true,
         useAsShipping: true,
+        billingAddress: '',
+        shippingAddress: '',
       });
     } catch (err) {
       console.error('Error saving customer:', err);
@@ -151,6 +155,8 @@ export default function CustomersPage() {
       primaryAddress: customer.primaryAddress || '',
       useAsBilling: customer.useAsBilling !== false,
       useAsShipping: customer.useAsShipping !== false,
+      billingAddress: customer.billingAddress || '',
+      shippingAddress: customer.shippingAddress || '',
     });
     setEditingId(customer.id);
     setShowModal(true);
@@ -502,13 +508,41 @@ export default function CustomersPage() {
                         <span className="ml-2 text-sm text-gray-700">Use as Shipping Address</span>
                       </label>
                     </div>
+                    
+                    {/* Billing Address Field - Show only if checkbox is checked */}
+                    {form.useAsBilling && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1 text-black">Billing Address</label>
+                        <textarea
+                          value={form.billingAddress || form.primaryAddress}
+                          onChange={(e) => setForm({...form, billingAddress: e.target.value})}
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                          placeholder="Enter billing address (defaults to primary address if not specified)"
+                          rows="3"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Shipping Address Field - Show only if checkbox is checked */}
+                    {form.useAsShipping && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1 text-black">Shipping Address</label>
+                        <textarea
+                          value={form.shippingAddress || form.primaryAddress}
+                          onChange={(e) => setForm({...form, shippingAddress: e.target.value})}
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                          placeholder="Enter shipping address (defaults to primary address if not specified)"
+                          rows="3"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-gray-200">
                   <button 
                     type="button"
-                    onClick={() => { setShowModal(false); setEditingId(null); setForm({ customerName: '', companyName: '', email: '', customerNumber: '', gstNumber: '', phoneNumber: '', primaryAddress: '', useAsBilling: true, useAsShipping: true }); }}
+                    onClick={() => { setShowModal(false); setEditingId(null); setForm({ customerName: '', companyName: '', email: '', customerNumber: '', gstNumber: '', phoneNumber: '', primaryAddress: '', useAsBilling: true, useAsShipping: true, billingAddress: '', shippingAddress: '' }); }}
                     className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                   >
                     Cancel

@@ -108,17 +108,31 @@ export default function DesignQueuePage() {
               });
               if (!resp.ok) return [order.id, null];
               const history = await resp.json();
-              const withPdf = Array.isArray(history)
+              console.log(`Order ${numericId} status history:`, history);
+              
+              // Debug: Show all entries with attachmentUrl
+              const pdfEntries = Array.isArray(history) ? history.filter(h => h.attachmentUrl) : [];
+              console.log(`Order ${numericId} PDF entries:`, pdfEntries);
+              
+              // Find the most recent MACHINING status entry
+              const machiningEntry = Array.isArray(history)
+                ? history
+                    .filter((h) => h.newStatus === 'MACHINING')
+                    .sort((a, b) => b.id - a.id)[0]
+                : null;
+              
+              // If there's a MACHINING entry, find the most recent PDF URL from any status
+              const withPdf = machiningEntry && Array.isArray(history)
                 ? history
                     .filter(
                       (h) =>
                         h.attachmentUrl &&
-                        h.attachmentUrl.toLowerCase().endsWith('.pdf') &&
-                        (h.newStatus === 'PRODUCTION' || h.newStatus === 'PRODUCTION_READY' || h.newStatus === 'MACHINING')
+                        h.attachmentUrl.toLowerCase().endsWith('.pdf')
                     )
-                    .sort((a, b) => a.id - b.id)
-                    .at(-1)
+                    .sort((a, b) => b.id - a.id)[0]
                 : null;
+                
+              console.log(`Found PDF for order ${numericId}:`, withPdf?.attachmentUrl || 'None');
               return [order.id, withPdf ? withPdf.attachmentUrl : null];
             } catch {
               return [order.id, null];
@@ -194,7 +208,7 @@ export default function DesignQueuePage() {
   };
 
   const fetchThreeCheckboxSelection = async (orderId) => {
-    // Always start from empty; any ticks must come from saved backend data only
+    // Always start from a clean slate; any ticks come only from backend response
     setDesignerSelectedRowNos([]);
     setProductionSelectedRowNos([]);
     setMachineSelectedRowNos([]);
@@ -209,14 +223,16 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
-        setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
-        setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
-        setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+        const combinedSelections = (data.selectedRowIds || []).map(Number);
+        // For machine view, show all combined selections as designer selections
+        // This ensures all checkboxes from production+designer are displayed
+        setDesignerSelectedRowNos(combinedSelections);
+        console.log('Machine view - loaded combined selections:', combinedSelections);
       }
     } catch (error) {
       console.error('Error fetching three-checkbox selection:', error);
@@ -246,16 +262,15 @@ export default function DesignQueuePage() {
 
     try {
       setIsSaving(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          designerSelectedRowIds: designerSelectedRowNos.map(String),
-          productionSelectedRowIds: productionSelectedRowNos.map(String),
-          machineSelectedRowIds: machineSelectedRowNos.map(String),
+          selectedRowIds: [...designerSelectedRowNos, ...productionSelectedRowNos, ...machineSelectedRowNos].map(String),
+          attachmentUrl: pdfModalUrl,
         }),
       });
 
@@ -455,11 +470,11 @@ export default function DesignQueuePage() {
                 <div className="w-1/2 border-r border-gray-200">
                   <PdfRowOverlayViewer
                     pdfUrl={pdfModalUrl}
-                    rows={[]}
-                    selectedRowIds={[]}
-                    onToggleRow={() => {}}
+                    rows={pdfRows}
+                    selectedRowIds={[...designerSelectedRowNos, ...productionSelectedRowNos, ...machineSelectedRowNos]}
+                    onToggleRow={handleMachineCheckboxChange}
                     initialScale={0.9}
-                    showCheckboxes={false}
+                    showCheckboxes={true}
                   />
                 </div>
                 <div className="w-1/2 flex flex-col min-h-0">

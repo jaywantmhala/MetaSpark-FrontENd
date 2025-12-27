@@ -30,6 +30,9 @@ export default function ProductionLinePage() {
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
+  const [pdfRows, setPdfRows] = useState([]);
+  const [partsRows, setPartsRows] = useState([]);
+  const [materialRows, setMaterialRows] = useState([]);
   const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
   const [selectedPartsRowNos, setSelectedPartsRowNos] = useState([]);
   const [selectedMaterialRowNos, setSelectedMaterialRowNos] = useState([]);
@@ -163,14 +166,12 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
-        setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
-        setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
-        setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+        setDesignerSelectedRowNos((data.selectedRowIds || []).map(Number));
       }
     } catch (error) {
       console.error('Error fetching three-checkbox selection:', error);
@@ -198,16 +199,15 @@ export default function ProductionLinePage() {
 
     try {
       setIsSendingToMachine(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          designerSelectedRowIds: designerSelectedRowNos.map(String),
-          productionSelectedRowIds: productionSelectedRowNos.map(String),
-          machineSelectedRowIds: machineSelectedRowNos.map(String),
+          selectedRowIds: [...designerSelectedRowNos, ...productionSelectedRowNos, ...machineSelectedRowNos].map(String),
+          attachmentUrl: pdfModalUrl,
         }),
       });
 
@@ -381,7 +381,7 @@ export default function ProductionLinePage() {
                               setPdfRows([]);
                               setPartsRows([]);
                               setMaterialRows([]);
-                              setDesignerSelectedRowIds([]);
+                              setDesignerSelectedRowNos([]);
                               setProductionSelectedRowNos([]);
                               setMachineSelectedRowNos([]);
 
@@ -495,7 +495,7 @@ export default function ProductionLinePage() {
               setPdfRows([]);
               setPartsRows([]);
               setMaterialRows([]);
-              setDesignerSelectedRowIds([]);
+              setDesignerSelectedRowNos([]);
               setProductionSelectedRowNos([]);
               setMachineSelectedRowNos([]);
             }}
@@ -511,7 +511,7 @@ export default function ProductionLinePage() {
                     setPdfRows([]);
                     setPartsRows([]);
                     setMaterialRows([]);
-                    setDesignerSelectedRowIds([]);
+                    setDesignerSelectedRowNos([]);
                     setProductionSelectedRowNos([]);
                     setMachineSelectedRowNos([]);
                   }}
@@ -524,12 +524,12 @@ export default function ProductionLinePage() {
                 <div className="w-1/2 border-r border-gray-200">
                   <PdfRowOverlayViewer
                     pdfUrl={pdfModalUrl}
-                    rows={[]}
-                    selectedRowIds={[]}
+                    rows={activePdfTab === 'subnest' ? pdfRows : activePdfTab === 'parts' ? partsRows : materialRows}
+                    selectedRowIds={designerSelectedRowNos}
                     onToggleRow={() => {}}
                     initialScale={1.1}
                     showCheckboxes={false}
-                  />
+                  /> 
                 </div>
                 <div className="w-1/2 flex flex-col">
                   <div className="border-b border-gray-200 flex items-center justify-between px-3 py-2 text-xs">
@@ -798,7 +798,14 @@ export default function ProductionLinePage() {
                       // Save three-checkbox selection first
                       await saveThreeCheckboxSelection();
                       
+                      // The /machining-selection endpoint already creates status entries
+                      
                       // Then send to machining with machine selection
+                      console.log('Sending to machine with data:', {
+                        selectedRowIds: productionSelectedRowNos.map(String),
+                        machineId: selectedMachineId,
+                        attachmentUrl: pdfModalUrl,
+                      });
                       const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
                         method: 'POST',
                         headers: {
@@ -808,6 +815,7 @@ export default function ProductionLinePage() {
                         body: JSON.stringify({
                           selectedRowIds: productionSelectedRowNos.map(String),
                           machineId: selectedMachineId,
+                          attachmentUrl: pdfModalUrl,
                         }),
                       });
 
@@ -817,11 +825,14 @@ export default function ProductionLinePage() {
                       if (!res.ok) {
                         msg = 'Failed to send to Machine';
                         try {
-                          const data = await res.json();
-                          if (data && data.message) msg = data.message;
+                          const errorData = await res.json();
+                          console.log('Machining selection error:', errorData);
+                          if (errorData && errorData.message) msg = errorData.message;
                         } catch {}
                         type = 'error';
                       } else {
+                        const responseData = await res.json();
+                        console.log('Machining selection success:', responseData);
                         msg = 'Selection sent to Machine successfully.';
                         type = 'success';
                         setShowSelectMachineModal(false);
